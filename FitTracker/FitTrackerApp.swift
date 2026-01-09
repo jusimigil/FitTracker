@@ -1,17 +1,15 @@
-//
-//  FitTrackerApp.swift
-//  FitTracker
-//
-//  Created by Jose Miguel on 1/9/26.
-//
-
 import SwiftUI
+import Combine
+import Foundation
 
 @main
 struct FitTrackerApp: App {
+    @StateObject private var dataManager = DataManager.shared
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(dataManager)
         }
     }
 }

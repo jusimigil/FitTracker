@@ -6,13 +6,39 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXCopyFilesBuildPhase section */
+		16CD82862F112899004E6992 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		16CD82662F112865004E6992 /* FitTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		16CD82AE2F1134B8004E6992 /* FitTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FitTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		16CD82B02F1134D9004E6992 /* Exceptions for "FitTracker" folder in "FitTracker" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 16CD82652F112865004E6992 /* FitTracker */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		16CD82682F112865004E6992 /* FitTracker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				16CD82B02F1134D9004E6992 /* Exceptions for "FitTracker" folder in "FitTracker" target */,
+			);
 			path = FitTracker;
 			sourceTree = "<group>";
 		};
@@ -32,17 +58,17 @@
 		16CD825D2F112865004E6992 = {
 			isa = PBXGroup;
 			children = (
+				16CD82872F11290F004E6992 /* Shared */,
 				16CD82682F112865004E6992 /* FitTracker */,
-				16CD82672F112865004E6992 /* Products */,
+				16CD82AE2F1134B8004E6992 /* FitTracker.app */,
 			);
 			sourceTree = "<group>";
 		};
-		16CD82672F112865004E6992 /* Products */ = {
+		16CD82872F11290F004E6992 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				16CD82662F112865004E6992 /* FitTracker.app */,
 			);
-			name = Products;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -55,6 +81,7 @@
 				16CD82622F112865004E6992 /* Sources */,
 				16CD82632F112865004E6992 /* Frameworks */,
 				16CD82642F112865004E6992 /* Resources */,
+				16CD82862F112899004E6992 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -67,7 +94,7 @@
 			packageProductDependencies = (
 			);
 			productName = FitTracker;
-			productReference = 16CD82662F112865004E6992 /* FitTracker.app */;
+			productReference = 16CD82AE2F1134B8004E6992 /* FitTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -95,7 +122,7 @@
 			mainGroup = 16CD825D2F112865004E6992;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 16CD82672F112865004E6992 /* Products */;
+			productRefGroup = 16CD825D2F112865004E6992;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -256,11 +283,15 @@
 				DEVELOPMENT_TEAM = 67DK7S3P5A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FitTracker/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -288,11 +319,15 @@
 				DEVELOPMENT_TEAM = 67DK7S3P5A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FitTracker/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
