@@ -9,6 +9,8 @@ struct ChartsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     
+                    CalendarHeatmap()
+                    
                     // Chart 1: Volume Over Time
                     VStack(alignment: .leading) {
                         Text("Volume Progression")

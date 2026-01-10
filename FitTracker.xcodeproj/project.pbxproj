@@ -286,6 +286,7 @@
 				INFOPLIST_FILE = FitTracker/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitTracker needs your location to tag where your workouts happen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -322,6 +323,7 @@
 				INFOPLIST_FILE = FitTracker/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitTracker needs your location to tag where your workouts happen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

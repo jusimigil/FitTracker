@@ -7,6 +7,13 @@ class DataManager: ObservableObject {
     
     @Published var workouts: [WorkoutSession] = []
     
+    @Published var routines: [Routine] = [
+            Routine(name: "Push Day", description: "Chest, Shoulders, Triceps", exerciseNames: ["Bench Press", "Overhead Press", "Incline Dumbbell Press", "Lateral Raises", "Tricep Pushdowns"]),
+            Routine(name: "Pull Day", description: "Back, Biceps, Rear Delts", exerciseNames: ["Deadlift", "Pull Ups", "Barbell Rows", "Face Pulls", "Bicep Curls"]),
+            Routine(name: "Leg Day", description: "Quads, Hamstrings, Calves", exerciseNames: ["Squats", "Leg Press", "Romanian Deadlifts", "Leg Extensions", "Calf Raises"]),
+            Routine(name: "Full Body", description: "Compound Movements", exerciseNames: ["Squats", "Bench Press", "Deadlift", "Overhead Press", "Pull Ups"])
+        ]
+    
     private let fileName = "workouts.json"
     
     init() {

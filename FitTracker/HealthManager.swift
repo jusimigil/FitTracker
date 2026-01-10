@@ -4,6 +4,7 @@ import SwiftUI
 import Combine
 
 class HealthManager: ObservableObject {
+    
     static let shared = HealthManager()
     let healthStore = HKHealthStore()
     
@@ -18,9 +19,11 @@ class HealthManager: ObservableObject {
     }
     
     func requestAuthorization() {
+        // 1. Add 'HKWorkoutType' to the permissions list
         let typesToRead: Set = [
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.workoutType() // <--- Crucial for reading Watch workouts
         ]
         
         healthStore.requestAuthorization(toShare: [], read: typesToRead) { success, error in
@@ -30,51 +33,98 @@ class HealthManager: ObservableObject {
         }
     }
     
-    func startMonitoring() {
-            // FIX: Only set the start date if it hasn't been set yet.
-            // This prevents the timer from resetting when you switch views.
-            if workoutStartDate == nil {
-                workoutStartDate = Date()
-            }
+    // 2. New Function: Import Cardio from Apple Watch
+    func fetchAppleWatchWorkouts(completion: @escaping ([WorkoutSession]) -> Void) {
+            let workoutType = HKObjectType.workoutType()
+            let predicate: NSPredicate? = nil // Retrieve all, filter below
             
-            // Prevent multiple timers from stacking up
-            if timer == nil {
-                timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-                    self.fetchLatestData()
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let limit = 20
+            
+            let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: limit, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                
+                guard let hkWorkouts = samples as? [HKWorkout], error == nil else { return }
+                
+                var newSessions: [WorkoutSession] = []
+                
+                for hkWorkout in hkWorkouts {
+                    var type: WorkoutType = .strength
+                    
+                    // FILTER: Only allow Running and Swimming
+                    switch hkWorkout.workoutActivityType {
+                    case .running: type = .run
+                    case .swimming: type = .swim
+                    default: continue // Skip Walking, Cycling, Yoga, etc.
+                    }
+                    
+                    let distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
+                    
+                    let session = WorkoutSession(
+                        id: hkWorkout.uuid,
+                        date: hkWorkout.startDate,
+                        type: type,
+                        distance: distance,
+                        duration: hkWorkout.duration
+                    )
+                    newSessions.append(session)
+                }
+                
+                DispatchQueue.main.async {
+                    completion(newSessions)
                 }
             }
+            healthStore.execute(query)
         }
     
-    func stopMonitoring() {
-            timer?.invalidate()
-            timer = nil
-            workoutStartDate = nil // Reset so the next workout starts at 00:00
+    func fetchAverageHeartRate(start: Date, end: Date, completion: @escaping (Double?) -> Void) {
+            let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+            
+            // Create a statistics query to get the average
+            let query = HKStatisticsQuery(quantityType: heartRateType, quantitySamplePredicate: predicate, options: .discreteAverage) { _, result, error in
+                
+                guard let result = result, let averageQuantity = result.averageQuantity() else {
+                    print("No heart rate data found for this period")
+                    DispatchQueue.main.async { completion(nil) }
+                    return
+                }
+                
+                let averageBPM = averageQuantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+                DispatchQueue.main.async {
+                    completion(averageBPM)
+                }
+            }
+            
+            healthStore.execute(query)
         }
+    
+    // ... (Keep your existing startMonitoring/stopMonitoring functions here) ...
+    func startMonitoring() {
+        if workoutStartDate == nil { workoutStartDate = Date() }
+        if timer == nil {
+            timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in self.fetchLatestData() }
+        }
+    }
+    
+    func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
+        workoutStartDate = nil
+    }
+    
     func fetchLatestData() {
-        // 1. Fetch Heart Rate (Latest Sample)
+        // ... (Keep existing HR/Calorie logic) ...
+        // (If you need this code again, let me know, but don't delete it from your file!)
         let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
         let hrQuery = HKSampleQuery(sampleType: hrType, predicate: nil, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, _ in
             if let sample = samples?.first as? HKQuantitySample {
                 let bpm = sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
-                // Only show if recent (last 10 mins)
                 if sample.startDate.timeIntervalSinceNow > -600 {
                     DispatchQueue.main.async { self.currentHeartRate = bpm }
                 }
             }
         }
         healthStore.execute(hrQuery)
-        
-        // 2. Fetch Calories (Sum since workout started)
-        guard let startDate = workoutStartDate else { return }
-        let calType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: Date(), options: .strictStartDate)
-        
-        let calQuery = HKStatisticsQuery(quantityType: calType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
-            guard let result = result, let sum = result.sumQuantity() else { return }
-            let totalCals = sum.doubleValue(for: HKUnit.kilocalorie())
-            DispatchQueue.main.async { self.activeCalories = totalCals }
-        }
-        healthStore.execute(calQuery)
     }
 }

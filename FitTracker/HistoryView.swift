@@ -2,8 +2,11 @@ import SwiftUI
 
 struct HistoryView: View {
     @EnvironmentObject var dataManager: DataManager
+    @StateObject private var healthManager = HealthManager.shared
     
-    // Calculate total volume across all workouts
+    // New State to control the popup
+    @State private var showRoutineSelection = false
+    
     var lifetimeVolume: Int {
         Int(dataManager.workouts.reduce(0) { $0 + $1.totalVolume })
     }
@@ -11,32 +14,24 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             List {
-                // MARK: - Summary Stats Card
+                // MARK: - Summary Stats
                 Section {
                     HStack(spacing: 20) {
-                        // Card 1: Workouts Count
                         VStack {
                             Text("\(dataManager.workouts.count)")
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .foregroundStyle(.blue)
                             Text("Workouts")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
+                                .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                         }
                         .frame(maxWidth: .infinity)
-                        
                         Divider()
-                        
-                        // Card 2: Total Volume
                         VStack {
                             Text(formatVolume(lifetimeVolume))
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .foregroundStyle(.blue)
                             Text("Lbs Lifted")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
+                                .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -44,42 +39,57 @@ struct HistoryView: View {
                     .listRowBackground(Color(.secondarySystemBackground))
                 }
                 
-                // MARK: - Start Button
-                Button(action: startNewSession) {
-                    Label("Start Workout", systemImage: "plus")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
+                // MARK: - Start Button (UPDATED)
+                Section {
+                    Button(action: { showRoutineSelection = true }) { // <--- Triggers the sheet
+                        Label("Start Workout", systemImage: "plus")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                    }
+                    .listRowBackground(Color.blue)
+                    .foregroundStyle(.white)
                 }
-                .listRowBackground(Color.blue)
-                .foregroundStyle(.white)
+                
+                // MARK: - Import Button
+                Section {
+                    Button(action: importWorkouts) {
+                        Label("Sync Apple Watch Runs", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
                 
                 // MARK: - History List
                 Section(header: Text("History")) {
                     if dataManager.workouts.isEmpty {
-                        Text("No workouts yet")
-                            .foregroundStyle(.secondary)
+                        Text("No workouts yet").foregroundStyle(.secondary)
                     } else {
-                        // Sort by date (newest first)
                         ForEach(dataManager.workouts.sorted(by: { $0.date > $1.date })) { session in
-                            NavigationLink(destination: SessionDetailView(workoutID: session.id)) {
+                            NavigationLink(destination: destinationView(for: session)) {
                                 HStack {
+                                    Image(systemName: getIcon(for: session.type))
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(getColor(for: session.type))
+                                        .clipShape(Circle())
+                                    
                                     VStack(alignment: .leading) {
-                                        Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                                        Text(session.type.rawValue.capitalized)
                                             .font(.headline)
-                                        Text("\(session.exercises.count) exercises")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                        Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    // Volume Badge
-                                    Text("\(Int(session.totalVolume)) lbs")
-                                        .font(.caption)
-                                        .bold()
-                                        .padding(6)
-                                        .background(Color.blue.opacity(0.1))
-                                        .foregroundColor(.blue)
-                                        .cornerRadius(8)
+                                    
+                                    if session.type == .strength {
+                                        Text("\(Int(session.totalVolume)) lbs")
+                                            .font(.caption).bold().padding(6)
+                                            .background(Color.blue.opacity(0.1)).foregroundStyle(.blue).cornerRadius(8)
+                                    } else {
+                                        let miles = (session.distance ?? 0) * 0.000621371
+                                        Text(String(format: "%.2f mi", miles))
+                                            .font(.caption).bold().padding(6)
+                                            .background(Color.green.opacity(0.1)).foregroundStyle(.green).cornerRadius(8)
+                                    }
                                 }
                             }
                         }
@@ -88,23 +98,57 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("FitTracker")
+            // Attach the sheet here
+            .sheet(isPresented: $showRoutineSelection) {
+                RoutineSelectionView()
+            }
         }
     }
     
-    // Helper: Turn 12500 into 12.5k
-    func formatVolume(_ volume: Int) -> String {
-        if volume >= 1_000_000 {
-            return String(format: "%.1fM", Double(volume) / 1_000_000)
-        } else if volume >= 1_000 {
-            return String(format: "%.1fk", Double(volume) / 1_000)
+    // ... (All your existing helper functions below: destinationView, getIcon, getColor, importWorkouts, deleteWorkout, formatVolume) ...
+    // Note: Ensure you keep the helper functions you already have in this file!
+    
+    @ViewBuilder
+    func destinationView(for session: WorkoutSession) -> some View {
+        if session.type == .strength {
+            SessionDetailView(workoutID: session.id)
         } else {
-            return "\(volume)"
+            VStack {
+                Text(session.type.rawValue.capitalized).font(.largeTitle).bold()
+                Text(session.date.formatted())
+                Divider().padding()
+                Text("Distance: \(String(format: "%.2f", (session.distance ?? 0) * 0.000621371)) mi")
+                Text("Duration: \(String(format: "%.0f", (session.duration ?? 0) / 60)) min")
+            }
         }
     }
     
-    func startNewSession() {
-        let newSession = WorkoutSession(date: Date())
-        dataManager.addWorkout(newSession)
+    func getIcon(for type: WorkoutType) -> String {
+        switch type {
+        case .strength: return "dumbbell.fill"
+        case .run: return "figure.run"
+        case .walk: return "figure.walk"
+        case .cycle: return "bicycle"
+        case .swim: return "figure.pool.swim"
+        }
+    }
+    
+    func getColor(for type: WorkoutType) -> Color {
+        switch type {
+        case .strength: return .blue
+        default: return .green
+        }
+    }
+
+    func importWorkouts() {
+        healthManager.fetchAppleWatchWorkouts { newSessions in
+            for session in newSessions {
+                if !dataManager.workouts.contains(where: { $0.id == session.id }) {
+                    dataManager.workouts.append(session)
+                }
+            }
+            dataManager.save()
+        }
     }
     
     func deleteWorkout(at offsets: IndexSet) {
@@ -116,5 +160,11 @@ struct HistoryView: View {
             }
         }
         dataManager.save()
+    }
+    
+    func formatVolume(_ volume: Int) -> String {
+        if volume >= 1_000_000 { return String(format: "%.1fM", Double(volume) / 1_000_000) }
+        else if volume >= 1_000 { return String(format: "%.1fk", Double(volume) / 1_000) }
+        else { return "\(volume)" }
     }
 }
