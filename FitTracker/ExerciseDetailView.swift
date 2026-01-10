@@ -167,11 +167,15 @@ struct ExerciseDetailView: View {
     }
     
     func logSet() {
-        // We cast rpe back to Int here for storage
-        let newSet = WorkoutSet(reps: reps, weight: weight, rpe: Int(rpe))
-        exercise.sets.append(newSet)
-        dataManager.save()
-    }
+            // 1. Trigger Haptics
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            
+            // 2. Save Data
+            let newSet = WorkoutSet(reps: reps, weight: weight, rpe: Int(rpe))
+            exercise.sets.append(newSet)
+            dataManager.save()
+        }
     
     func startRest(seconds: Int) {
         timeRemaining = seconds
