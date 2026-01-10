@@ -1,54 +1,69 @@
 import Foundation
 
-// Enum for workout types
 enum WorkoutType: String, Codable, Equatable {
-    case strength
-    case run
-    case walk
-    case cycle
-    case swim
+    case strength, run, walk, cycle, swim
+}
+
+enum MuscleGroup: String, Codable, CaseIterable {
+    case chest = "Chest", back = "Back", legs = "Legs", shoulders = "Shoulders", arms = "Arms", core = "Core"
 }
 
 struct Routine: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
+    var id = UUID()
     var name: String
     var description: String
-    var exerciseNames: [String]
+    var exercises: [ExerciseTemplate]
+}
+
+struct ExerciseTemplate: Codable, Hashable {
+    var name: String
+    var muscleGroup: MuscleGroup
 }
 
 struct WorkoutSet: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+    var id = UUID()
     var reps: Int
     var weight: Double
     var rpe: Int
 }
 
 struct Exercise: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+    var id = UUID()
     var name: String
     var sets: [WorkoutSet] = []
+    var muscleGroup: MuscleGroup = .chest
 }
 
 struct WorkoutSession: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+    var id = UUID()
     var date: Date
     var exercises: [Exercise] = []
-    
-    // Status Flag
-    var isCompleted: Bool = false  // <--- NEW FLAG
-    
+    var isCompleted = false
+    var notes: String = ""
     var type: WorkoutType = .strength
     var distance: Double?
     var duration: TimeInterval?
-    
     var averageHeartRate: Double?
-    
     var latitude: Double?
     var longitude: Double?
     
+    // Stores the calories burned
+    var activeCalories: Double?
+    
     var totalVolume: Double {
-        exercises.reduce(0) { total, exercise in
-            total + exercise.sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) }
-        }
+        exercises.reduce(0) { $0 + $1.sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) } }
     }
+}
+
+struct BodyMetric: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var date: Date
+    var weight: Double?
+    var bodyFat: Double?
+}
+
+// RESTORED: This is required for your Settings Export to work
+struct BackupData: Codable {
+    let workouts: [WorkoutSession]
+    let bodyMetrics: [BodyMetric]
 }

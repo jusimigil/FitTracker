@@ -2,10 +2,13 @@ import SwiftUI
 
 struct HistoryView: View {
     @EnvironmentObject var dataManager: DataManager
-    @StateObject private var healthManager = HealthManager.shared
     
-    // New State to control the popup
+    // Use ObservedObject for the shared instance
+    @ObservedObject var healthManager = HealthManager.shared
+    
+    // Sheets
     @State private var showRoutineSelection = false
+    @State private var showSettings = false
     
     var lifetimeVolume: Int {
         Int(dataManager.workouts.reduce(0) { $0 + $1.totalVolume })
@@ -21,8 +24,7 @@ struct HistoryView: View {
                             Text("\(dataManager.workouts.count)")
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .foregroundStyle(.blue)
-                            Text("Workouts")
-                                .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                            Text("Workouts").font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                         }
                         .frame(maxWidth: .infinity)
                         Divider()
@@ -30,8 +32,7 @@ struct HistoryView: View {
                             Text(formatVolume(lifetimeVolume))
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .foregroundStyle(.blue)
-                            Text("Lbs Lifted")
-                                .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                            Text("Lbs Lifted").font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -39,9 +40,9 @@ struct HistoryView: View {
                     .listRowBackground(Color(.secondarySystemBackground))
                 }
                 
-                // MARK: - Start Button (UPDATED)
+                // MARK: - Start Button
                 Section {
-                    Button(action: { showRoutineSelection = true }) { // <--- Triggers the sheet
+                    Button(action: { showRoutineSelection = true }) {
                         Label("Start Workout", systemImage: "plus")
                             .font(.headline)
                             .padding()
@@ -73,8 +74,7 @@ struct HistoryView: View {
                                         .clipShape(Circle())
                                     
                                     VStack(alignment: .leading) {
-                                        Text(session.type.rawValue.capitalized)
-                                            .font(.headline)
+                                        Text(session.type.rawValue.capitalized).font(.headline)
                                         Text(session.date.formatted(date: .abbreviated, time: .shortened))
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
@@ -98,15 +98,22 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("FitTracker")
-            // Attach the sheet here
-            .sheet(isPresented: $showRoutineSelection) {
-                RoutineSelectionView()
+            // MARK: - Toolbar (Gear Icon)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gear")
+                    }
+                }
             }
+            // MARK: - Sheets
+            // FIX: Ensure this matches the struct name (RoutineSelectionView)
+            .sheet(isPresented: $showRoutineSelection) { RoutineSelection() }
+            .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
     
-    // ... (All your existing helper functions below: destinationView, getIcon, getColor, importWorkouts, deleteWorkout, formatVolume) ...
-    // Note: Ensure you keep the helper functions you already have in this file!
+    // MARK: - Helper Functions
     
     @ViewBuilder
     func destinationView(for session: WorkoutSession) -> some View {
@@ -119,6 +126,9 @@ struct HistoryView: View {
                 Divider().padding()
                 Text("Distance: \(String(format: "%.2f", (session.distance ?? 0) * 0.000621371)) mi")
                 Text("Duration: \(String(format: "%.0f", (session.duration ?? 0) / 60)) min")
+                if let cals = session.activeCalories {
+                    Text("Calories: \(Int(cals))").foregroundStyle(.orange)
+                }
             }
         }
     }
@@ -141,14 +151,9 @@ struct HistoryView: View {
     }
 
     func importWorkouts() {
-        healthManager.fetchAppleWatchWorkouts { newSessions in
-            for session in newSessions {
-                if !dataManager.workouts.contains(where: { $0.id == session.id }) {
-                    dataManager.workouts.append(session)
-                }
-            }
-            dataManager.save()
-        }
+        // FIX: Use the new robust sync function from HealthManager
+        // This handles Runs AND Swims automatically
+        healthManager.syncWorkouts(into: dataManager)
     }
     
     func deleteWorkout(at offsets: IndexSet) {

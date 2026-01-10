@@ -12,6 +12,7 @@ struct SessionDetailView: View {
     @State private var showExercisePicker = false
     @State private var newExerciseName = ""
     @State private var elapsedTime = "00:00"
+    
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var workoutIndex: Int? {
@@ -23,94 +24,59 @@ struct SessionDetailView: View {
             let session = dataManager.workouts[index]
             
             VStack(spacing: 0) {
-                // MARK: - Header Area
+                // MARK: - Header Dashboard
                 if !session.isCompleted {
-                    // LIVE DASHBOARD
                     HStack {
                         DashboardItem(title: "Duration", value: elapsedTime, color: .primary)
-                        Spacer()
-                        DashboardItem(title: "Heart Rate", value: "\(Int(healthManager.currentHeartRate))", color: .red, icon: "heart.fill")
                         Spacer()
                         DashboardItem(title: "Calories", value: "\(Int(healthManager.activeCalories))", color: .orange)
                     }
                     .padding()
                     .background(Color(.systemGroupedBackground))
                 } else {
-                    // COMPLETED SUMMARY (Updated)
+                    // MARK: - COMPLETED HEADER (With Calories)
                     VStack(spacing: 15) {
-                        HStack {
-                            Text("Workout Completed")
-                                .font(.headline)
-                                .foregroundStyle(.green)
-                            Spacer()
-                            Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Divider()
-                        
-                        // The New Stats Row
-                        HStack {
-                            // Duration
+                        Text("Workout Completed").font(.headline).foregroundStyle(.green)
+                        HStack(spacing: 40) {
                             if let duration = session.duration {
                                 VStack {
-                                    Text("Duration")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    Text(formatDuration(duration))
-                                        .font(.title3).bold().monospacedDigit()
+                                    Text("Time").font(.caption).foregroundStyle(.secondary)
+                                    Text(formatDuration(duration)).font(.title3).bold().monospacedDigit()
                                 }
-                                .frame(maxWidth: .infinity)
                             }
-                            
-                            // Avg Heart Rate
-                            if let avgHR = session.averageHeartRate {
+                            // Displays final saved calories
+                            if let cals = session.activeCalories {
                                 VStack {
-                                    Text("Avg HR")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    Text("\(Int(avgHR)) bpm")
-                                        .font(.title3).bold().foregroundStyle(.red)
+                                    Text("Calories").font(.caption).foregroundStyle(.secondary)
+                                    Text("\(Int(cals))").font(.title3).bold().foregroundStyle(.orange)
                                 }
-                                .frame(maxWidth: .infinity)
                             }
-                            
-                            // Volume (Optional extra)
-                            VStack {
-                                Text("Volume")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                Text("\(Int(session.totalVolume)) lbs")
-                                    .font(.title3).bold().foregroundStyle(.blue)
-                            }
-                            .frame(maxWidth: .infinity)
                         }
                     }
                     .padding()
+                    .frame(maxWidth: .infinity)
                     .background(Color(.systemGroupedBackground))
                 }
                 
                 // MARK: - Exercise List
                 List {
-                    // Only show Add Button if NOT completed
+                    Section(header: Text("Notes")) {
+                        TextField("Session notes...", text: $dataManager.workouts[index].notes, axis: .vertical)
+                            .disabled(session.isCompleted)
+                    }
+                    
                     if !session.isCompleted {
                         Button(action: { showExercisePicker = true }) {
-                            Label("Add Exercise", systemImage: "plus.circle.fill")
-                                .font(.headline)
-                                .padding(.vertical, 8)
+                            Label("Add Exercise", systemImage: "plus.circle.fill").foregroundColor(.blue)
                         }
-                        .foregroundColor(.blue)
                     }
                     
-                    if session.exercises.isEmpty {
-                        Text(session.isCompleted ? "No exercises recorded." : "No exercises yet. Tap above to add one!")
-                            .foregroundStyle(.secondary)
-                            .padding()
-                    }
-                    
-                    ForEach($dataManager.workouts[index].exercises) { $exercise in
-                        NavigationLink(destination: ExerciseDetailView(exercise: $exercise, readOnly: session.isCompleted)) {
+                    ForEach($dataManager.workouts[index].exercises) { $ex in
+                        NavigationLink(destination: ExerciseDetailView(exercise: $ex, readOnly: session.isCompleted)) {
                             HStack {
-                                Text(exercise.name).font(.headline)
+                                Text(ex.name).font(.headline)
                                 Spacer()
-                                Text("\(exercise.sets.count) sets").foregroundStyle(.secondary)
+                                Text("\(ex.sets.count) sets").foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -123,32 +89,24 @@ struct SessionDetailView: View {
                     
                     if !session.isCompleted {
                         Section {
-                            Button(action: { finishWorkout(index: index) }) {
-                                Text("Finish Workout")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .foregroundColor(.red)
-                            }
+                            Button("Finish Workout", role: .destructive) { finishWorkout(index: index) }
                         }
                     }
                 }
             }
-            .navigationTitle(session.isCompleted ? "Summary" : "Session")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(session.type.rawValue.capitalized)
             .onAppear {
-                if !dataManager.workouts[index].isCompleted {
-                    healthManager.startMonitoring()
+                if !session.isCompleted {
+                    healthManager.startMonitoring(startTime: session.date)
+                    updateTimer()
                 }
             }
             .onReceive(timer) { _ in updateTimer() }
-            
-            // Add Exercise Alert
             .alert("Add Exercise", isPresented: $showExercisePicker) {
-                TextField("Exercise Name (e.g. Bench Press)", text: $newExerciseName)
+                TextField("Name", text: $newExerciseName)
                 Button("Add") {
                     if !newExerciseName.isEmpty {
-                        let newEx = Exercise(name: newExerciseName)
-                        dataManager.workouts[index].exercises.append(newEx)
+                        dataManager.workouts[index].exercises.append(Exercise(name: newExerciseName))
                         dataManager.save()
                         newExerciseName = ""
                     }
@@ -160,61 +118,50 @@ struct SessionDetailView: View {
         }
     }
     
-    // UPDATED Finish Logic
+    // MARK: - Functions
     func finishWorkout(index: Int) {
-        let endTime = Date()
-        let startTime = healthManager.workoutStartDate ?? endTime.addingTimeInterval(-1) // Fallback
+        let end = Date()
+        let start = dataManager.workouts[index].date
         
-        // 1. Calculate Duration
-        let duration = endTime.timeIntervalSince(startTime)
-        dataManager.workouts[index].duration = duration
+        // SAVE FINAL CALORIES
+        let finalCalories = healthManager.activeCalories
+        dataManager.workouts[index].activeCalories = finalCalories
         
-        // 2. Stop Monitoring
-        healthManager.stopMonitoring()
-        
-        // 3. Fetch Average Heart Rate from HealthKit
-        healthManager.fetchAverageHeartRate(start: startTime, end: endTime) { avgHeartRate in
-            
-            // Update Data on Main Thread
-            if let hr = avgHeartRate {
+        healthManager.fetchAverageHeartRate(start: start, end: end) { avg in
+            if let hr = avg {
                 dataManager.workouts[index].averageHeartRate = hr
             }
             
-            // 4. Mark Completed & Location
             dataManager.workouts[index].isCompleted = true
+            dataManager.workouts[index].duration = end.timeIntervalSince(start)
             
-            if dataManager.workouts[index].latitude == nil, let loc = locationManager.userLocation {
+            if let loc = locationManager.userLocation {
                 dataManager.workouts[index].latitude = loc.latitude
                 dataManager.workouts[index].longitude = loc.longitude
             }
             
             dataManager.save()
+            healthManager.stopMonitoring()
             dismiss()
         }
     }
     
     func updateTimer() {
-        guard let start = healthManager.workoutStartDate else { return }
-        let diff = Date().timeIntervalSince(start)
-        dataManager.workouts[workoutIndex!].duration = diff // Live update duration
+        guard let index = workoutIndex else { return }
+        let startTime = dataManager.workouts[index].date
+        let diff = Date().timeIntervalSince(startTime)
         elapsedTime = formatDuration(diff)
     }
     
-    // Helper to format 3605 seconds -> "01:00:05"
     func formatDuration(_ totalSeconds: TimeInterval) -> String {
         let hours = Int(totalSeconds) / 3600
         let minutes = (Int(totalSeconds) % 3600) / 60
         let seconds = Int(totalSeconds) % 60
-        
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
-// Ensure DashboardItem exists at bottom
+// MARK: - MISSING COMPONENT (This fixes the error)
 struct DashboardItem: View {
     let title: String
     let value: String
@@ -229,5 +176,6 @@ struct DashboardItem: View {
                 Text(value).font(.title2).bold().foregroundStyle(color).monospacedDigit()
             }
         }
+        .frame(maxWidth: .infinity)
     }
 }

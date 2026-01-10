@@ -1,38 +1,24 @@
 import SwiftUI
-import CoreLocation
+internal import _LocationEssentials
 
-struct RoutineSelectionView: View {
+struct RoutineSelection: View {
     @EnvironmentObject var dataManager: DataManager
     @Environment(\.dismiss) var dismiss
-    
-    // We use a local LocationManager here to tag the workout
     @StateObject private var locationManager = LocationManager()
+    
+    // Alert State
+    @State private var showingActiveWorkoutAlert = false
     
     var body: some View {
         NavigationStack {
             List {
-                // Option 1: Start Empty
                 Section {
-                    Button(action: { startRoutine(nil) }) {
-                        Label("Empty Workout", systemImage: "plus.square.dashed")
-                            .font(.headline)
-                            .padding(.vertical, 5)
-                    }
+                    Button("Empty Workout") { attemptStart(nil) }
                 }
                 
-                // Option 2: Predefined Routines
-                Section(header: Text("My Routines")) {
+                Section(header: Text("Routines")) {
                     ForEach(dataManager.routines) { routine in
-                        Button(action: { startRoutine(routine) }) {
-                            VStack(alignment: .leading) {
-                                Text(routine.name)
-                                    .font(.headline)
-                                Text(routine.description)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 5)
-                        }
+                        Button(routine.name) { attemptStart(routine) }
                     }
                 }
             }
@@ -42,27 +28,39 @@ struct RoutineSelectionView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .alert("Active Workout Found", isPresented: $showingActiveWorkoutAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("You already have an unfinished workout. Please finish it before starting a new one.")
+            }
+        }
+    }
+    
+    // New Logic: Check for active workouts first
+    func attemptStart(_ routine: Routine?) {
+        // Check if ANY workout in history is NOT completed
+        if dataManager.workouts.contains(where: { !$0.isCompleted }) {
+            showingActiveWorkoutAlert = true
+        } else {
+            startRoutine(routine)
         }
     }
     
     func startRoutine(_ routine: Routine?) {
         var newSession = WorkoutSession(date: Date(), type: .strength)
         
-        // 1. Pre-fill exercises if a routine was picked
         if let routine = routine {
-            for name in routine.exerciseNames {
-                let exercise = Exercise(name: name)
+            for template in routine.exercises {
+                let exercise = Exercise(name: template.name, muscleGroup: template.muscleGroup)
                 newSession.exercises.append(exercise)
             }
         }
         
-        // 2. Tag Location (if found)
-        if let location = locationManager.userLocation {
-            newSession.latitude = location.latitude
-            newSession.longitude = location.longitude
+        if let loc = locationManager.userLocation {
+            newSession.latitude = loc.latitude
+            newSession.longitude = loc.longitude
         }
         
-        // 3. Save & Close
         dataManager.addWorkout(newSession)
         dismiss()
     }
