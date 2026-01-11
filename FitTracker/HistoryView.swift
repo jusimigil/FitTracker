@@ -1,17 +1,40 @@
 import SwiftUI
 
+// 1. Define the Filter Categories
+enum WorkoutFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case strength = "Strength"
+    case cardio = "Cardio"
+    var id: String { self.rawValue }
+}
+
 struct HistoryView: View {
     @EnvironmentObject var dataManager: DataManager
-    
-    // Use ObservedObject for the shared instance
+    // We still observe HealthManager for background updates, even if the button is gone
     @ObservedObject var healthManager = HealthManager.shared
     
     // Sheets
     @State private var showRoutineSelection = false
     @State private var showSettings = false
     
+    // Filter State
+    @State private var selectedFilter: WorkoutFilter = .all
+    
     var lifetimeVolume: Int {
         Int(dataManager.workouts.reduce(0) { $0 + $1.totalVolume })
+    }
+    
+    var filteredWorkouts: [WorkoutSession] {
+        let sortedList = dataManager.workouts.sorted(by: { $0.date > $1.date })
+        
+        switch selectedFilter {
+        case .all:
+            return sortedList
+        case .strength:
+            return sortedList.filter { $0.type == .strength }
+        case .cardio:
+            return sortedList.filter { $0.type != .strength }
+        }
     }
     
     var body: some View {
@@ -40,7 +63,7 @@ struct HistoryView: View {
                     .listRowBackground(Color(.secondarySystemBackground))
                 }
                 
-                // MARK: - Start Button
+                // MARK: - Actions (Start Button Only)
                 Section {
                     Button(action: { showRoutineSelection = true }) {
                         Label("Start Workout", systemImage: "plus")
@@ -52,19 +75,20 @@ struct HistoryView: View {
                     .foregroundStyle(.white)
                 }
                 
-                // MARK: - Import Button
-                Section {
-                    Button(action: importWorkouts) {
-                        Label("Sync Apple Watch Runs", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                
-                // MARK: - History List
+                // MARK: - Filter & History
                 Section(header: Text("History")) {
-                    if dataManager.workouts.isEmpty {
-                        Text("No workouts yet").foregroundStyle(.secondary)
+                    Picker("Filter", selection: $selectedFilter) {
+                        ForEach(WorkoutFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.vertical, 5)
+                    
+                    if filteredWorkouts.isEmpty {
+                        Text("No workouts found").foregroundStyle(.secondary)
                     } else {
-                        ForEach(dataManager.workouts.sorted(by: { $0.date > $1.date })) { session in
+                        ForEach(filteredWorkouts) { session in
                             NavigationLink(destination: destinationView(for: session)) {
                                 HStack {
                                     Image(systemName: getIcon(for: session.type))
@@ -98,7 +122,6 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("FitTracker")
-            // MARK: - Toolbar (Gear Icon)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: { showSettings = true }) {
@@ -106,14 +129,12 @@ struct HistoryView: View {
                     }
                 }
             }
-            // MARK: - Sheets
-            // FIX: Ensure this matches the struct name (RoutineSelectionView)
-            .sheet(isPresented: $showRoutineSelection) { RoutineSelection() }
+            .sheet(isPresented: $showRoutineSelection) { RoutineSelectionView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
     
-    // MARK: - Helper Functions
+    // MARK: - Helpers
     
     @ViewBuilder
     func destinationView(for session: WorkoutSession) -> some View {
@@ -149,17 +170,10 @@ struct HistoryView: View {
         default: return .green
         }
     }
-
-    func importWorkouts() {
-        // FIX: Use the new robust sync function from HealthManager
-        // This handles Runs AND Swims automatically
-        healthManager.syncWorkouts(into: dataManager)
-    }
     
     func deleteWorkout(at offsets: IndexSet) {
-        let sortedList = dataManager.workouts.sorted(by: { $0.date > $1.date })
         offsets.forEach { index in
-            let sessionToDelete = sortedList[index]
+            let sessionToDelete = filteredWorkouts[index]
             if let indexInMain = dataManager.workouts.firstIndex(where: { $0.id == sessionToDelete.id }) {
                 dataManager.workouts.remove(at: indexInMain)
             }

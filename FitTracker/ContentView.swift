@@ -9,11 +9,18 @@ struct ContentView: View {
         
         TabView {
             
+            TodayView()
+                            .environmentObject(dataManager)
+                            .tabItem {
+                                Label("Today", systemImage: "sun.max.fill")
+                            }
+            
             HistoryView()
                 .tabItem {
                     Label("Journal", systemImage: "list.bullet.clipboard")
                 }
             
+        
             ChartsView()
                 .tabItem {
                     Label("Progress", systemImage: "chart.xyaxis.line")
