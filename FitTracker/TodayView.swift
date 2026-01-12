@@ -5,36 +5,71 @@ struct TodayView: View {
     @ObservedObject var recompManager = RecompManager.shared
     @ObservedObject var healthManager = HealthManager.shared
     
+    // Auto-Navigation
+    @State private var path = NavigationPath()
+    
+    // UI State
     @State private var showRoutineSelection = false
-    @State private var dailyRecoveryScore: Double = 8.0
+    
+    // MARK: - PERSISTENT DATA (Memory)
+    // We replace @State with @AppStorage so it remembers across app restarts
+    @AppStorage("dailyRecoveryScore") var dailyRecoveryScore: Double = 8.0
+    @AppStorage("lastCheckInDate") var lastCheckInDate: String = ""
+    
+    // Popup State
+    @State private var showDailyCheckIn = false
+    
+    // Performance Cache
+    @State private var cachedStatus: (status: String, color: Color) = ("Loading...", .gray)
+    @State private var cachedWeakLink: String = "Analyzing..."
+    @State private var cachedOverload: String = "--"
+    @State private var cachedSymmetry: String = "--"
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 20) {
                     
-                    // MARK: - 1. TRAINER BRIEFING
+                    // MARK: - 1. TRAINER BRIEFING (Updated)
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Trainer Briefing").font(.headline).foregroundStyle(.secondary)
+                        HStack {
+                            Text("Trainer Briefing")
+                                .font(.headline).foregroundStyle(.secondary)
+                            Spacer()
+                            // Small indicator of today's score
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                                Text("Recovery: \(Int(dailyRecoveryScore))/10")
+                                    .font(.caption).bold()
+                            }
+                            .padding(6)
+                            .background(Color.pink.opacity(0.1))
+                            .cornerRadius(8)
+                        }
                         
+                        // Combined Advice based on the CHECK-IN score
                         HStack(alignment: .top) {
                             Image(systemName: "quote.opening").foregroundStyle(.purple)
-                            Text(recompManager.getFlexibleTarget(recoveryScore: Int(dailyRecoveryScore)))
-                                .font(.body).italic()
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        
-                        Divider()
-                        
-                        VStack(alignment: .leading) {
-                            HStack {
-                                Text("Recovery Status")
-                                Spacer()
-                                Text("\(Int(dailyRecoveryScore))/10").bold().foregroundStyle(.purple)
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                // 1. Smart Advice (Based on stored Daily Score)
+                                Text(recompManager.getFlexibleTarget(recoveryScore: Int(dailyRecoveryScore)))
+                                    .font(.body).italic()
+                                    .fixedSize(horizontal: false, vertical: true)
+                                
+                                // 2. Weak Link Alert
+                                if cachedWeakLink.contains("⚠️") {
+                                    Divider()
+                                    Text(cachedWeakLink)
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.orange)
+                                }
                             }
-                            .font(.caption)
-                            Slider(value: $dailyRecoveryScore, in: 1...10, step: 1).tint(.purple)
                         }
+                        
+                        // Note: Slider Removed as requested.
+                        // The score is now set via the daily popup.
                     }
                     .padding()
                     .background(Color(.systemBackground))
@@ -45,37 +80,34 @@ struct TodayView: View {
                     VStack(alignment: .leading, spacing: 15) {
                         Text("Smart Insights").font(.headline).foregroundStyle(.secondary)
                         
-                        // 1. Progressive Overload
+                        // Insight A: Progressive Overload
                         HStack {
                             Image(systemName: "arrow.up.right.circle.fill").foregroundStyle(.green).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Progressive Overload (Bench)").font(.caption).bold()
-                                Text(recompManager.suggestProgressiveOverload(for: "Bench", dataManager: dataManager))
-                                    .font(.subheadline)
+                                Text(cachedOverload).font(.subheadline)
                             }
                         }
                         
                         Divider()
                         
-                        // 2. Muscle Balance (Upper vs Lower)
+                        // Insight B: Muscle Balance
                         HStack {
                             Image(systemName: "scalemass.fill").foregroundStyle(.blue).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Muscle Balance").font(.caption).bold()
-                                Text(recompManager.analyzeSymmetry(dataManager: dataManager))
-                                    .font(.subheadline)
+                                Text(cachedSymmetry).font(.subheadline)
                             }
                         }
                         
                         Divider()
                         
-                        // 3. Weak Link Detector (NEW)
+                        // Insight C: Weak Link Detector
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Weak Link Detector").font(.caption).bold()
-                                Text(recompManager.findLaggingMuscle(dataManager: dataManager))
-                                    .font(.subheadline)
+                                Text(cachedWeakLink).font(.subheadline)
                             }
                         }
                     }
@@ -84,17 +116,17 @@ struct TodayView: View {
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                     
-                    // MARK: - 3. STATUS GRID
-                    let status = recompManager.analyzeStatus(dataManager: dataManager)
+                    // MARK: - 3. RECOMP STATUS GRID
                     HStack(spacing: 15) {
-                        // Volume Card
+                        // Card A: Volume
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Image(systemName: "dumbbell.fill").foregroundStyle(.blue)
                                 Text("Volume").font(.caption).bold().foregroundStyle(.secondary)
                             }
-                            Text(status.status.components(separatedBy: " (").first ?? "Analyzing")
-                                .font(.headline).minimumScaleFactor(0.8).foregroundStyle(status.color)
+                            Text(cachedStatus.status.components(separatedBy: " (").first ?? "Analyzing")
+                                .font(.headline).minimumScaleFactor(0.8).foregroundStyle(cachedStatus.color)
+                            
                             Text("Goal: \(recompManager.weeklySetTarget) sets/muscle")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
@@ -104,7 +136,7 @@ struct TodayView: View {
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                         
-                        // Activity Card
+                        // Card B: Activity
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Image(systemName: "figure.walk").foregroundStyle(.green)
@@ -136,7 +168,47 @@ struct TodayView: View {
             }
             .background(Color(.secondarySystemBackground))
             .navigationTitle("Today")
-            .sheet(isPresented: $showRoutineSelection) { RoutineSelectionView() }
+            
+            // MARK: - LOGIC TRIGGERS
+            .onAppear {
+                calculateStats()
+                checkDailyLogin() // <--- Triggers the popup if new day
+            }
+            .onChange(of: dataManager.workouts) { _, _ in calculateStats() }
+            
+            // MARK: - NAVIGATION & SHEETS
+            .sheet(isPresented: $showDailyCheckIn) {
+                RecoveryCheckInView()
+            }
+            .sheet(isPresented: $showRoutineSelection) {
+                RoutineSelectionView { newID in
+                    path.append(newID)
+                }
+            }
+            .navigationDestination(for: UUID.self) { workoutID in
+                SessionDetailView(workoutID: workoutID)
+            }
         }
+    }
+    
+    // MARK: - LOGIC
+    func checkDailyLogin() {
+        // Create a simple date string (e.g., "10/24/2025")
+        let today = Date().formatted(date: .numeric, time: .omitted)
+        
+        // If the saved date is NOT today, show the popup
+        if lastCheckInDate != today {
+            // Add a slight delay so the UI loads first
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showDailyCheckIn = true
+            }
+        }
+    }
+    
+    func calculateStats() {
+        cachedStatus = recompManager.analyzeStatus(dataManager: dataManager)
+        cachedWeakLink = recompManager.findLaggingMuscle(dataManager: dataManager)
+        cachedOverload = recompManager.suggestProgressiveOverload(for: "Bench", dataManager: dataManager)
+        cachedSymmetry = recompManager.analyzeSymmetry(dataManager: dataManager)
     }
 }

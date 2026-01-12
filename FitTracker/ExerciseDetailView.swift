@@ -8,6 +8,9 @@ struct ExerciseDetailView: View {
     
     @EnvironmentObject var dataManager: DataManager
     
+    // 1. ADD: The Manager for ML Insights
+    @ObservedObject var recompManager = RecompManager.shared
+    
     @State private var reps = 10
     @State private var weight = 45.0
     @State private var rpe = 8.0
@@ -16,13 +19,66 @@ struct ExerciseDetailView: View {
     @State private var timeRemaining = 0
     @State private var totalRestTime: Double = 90.0
     @State private var timerActive = false
-    
-    // We use a simpler timer approach here
     @State private var internalTimer: Timer?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 25) {
+                
+                // MARK: - 1. NEW: MACHINE LEARNING INSIGHT
+                // I added this at the top so you see it before you log
+                if !readOnly {
+                    HStack(alignment: .top) {
+                        Image(systemName: "wand.and.stars")
+                            .foregroundStyle(.purple)
+                            .font(.title2)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Smart Recommendation")
+                                .font(.caption).bold().foregroundStyle(.purple)
+                            
+                            // This pulls the prediction from your manager
+                            Text(recompManager.suggestProgressiveOverload(for: exercise.name, dataManager: dataManager))
+                                .font(.subheadline)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.purple.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                
+                if !readOnly {
+                    HStack(spacing: 15) {
+                        // Stat A: Heaviest Lift Ever
+                        VStack(alignment: .leading) {
+                            Text("Best Lift").font(.caption).foregroundStyle(.secondary)
+                            Text("\(Int(getPersonalBest(exerciseName: exercise.name))) lbs")
+                                .font(.title2).bold().foregroundStyle(.primary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                        
+                        // Stat B: Estimated 1RM (Based on current input)
+                        VStack(alignment: .leading) {
+                            Text("Est. 1 Rep Max").font(.caption).foregroundStyle(.secondary)
+                            // Live calculation based on slider
+                            let estMax = weight * (1 + (Double(reps) / 30.0))
+                            Text("\(Int(estMax)) lbs")
+                                .font(.title2).bold().foregroundStyle(.blue)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                    }
+                    // We don't want padding here because the parent VStack has it,
+                    // but check your layout spacing.
+                }
+                
                 // MARK: - Input Controls
                 if !readOnly {
                     VStack(spacing: 20) {
@@ -37,13 +93,8 @@ struct ExerciseDetailView: View {
                         }
                         Divider()
                         HStack { Text("Reps").fontWeight(.medium); Spacer(); Stepper("\(reps)", value: $reps, in: 1...100).fixedSize() }
-                        Divider()
-                                                HStack {
-                                                    Text("Muscle").fontWeight(.medium); Spacer()
-                                                    Picker("Muscle", selection: $exercise.muscleGroup) {
-                                                        ForEach(MuscleGroup.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                                                    }.pickerStyle(.menu)
-                                                }
+                        
+                        // REMOVED: Muscle Picker (As you requested)
                     }
                     .padding().background(Color(.secondarySystemBackground)).cornerRadius(15)
                     
@@ -59,32 +110,29 @@ struct ExerciseDetailView: View {
                                 .cornerRadius(12)
                         }
                         
-                        // Replace the "if timerActive" ZStack block with this:
-
+                        // MARK: - Rest Timer Logic
                         if timerActive {
                             ZStack(alignment: .leading) {
-                                // 1. Background Container
+                                // 1. Background
                                 RoundedRectangle(cornerRadius: 12)
                                     .fill(Color.orange.opacity(0.1))
                                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange, lineWidth: 2))
                                 
-                                // 2. The Draining Bar (Animated)
+                                // 2. Animated Bar
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 8)
                                         .fill(Color.orange)
                                         .padding(4)
                                         .frame(width: max(0, (geo.size.width - 8) * (Double(timeRemaining) / totalRestTime)))
-                                        // We keep the animation ONLY on the bar's width
                                         .animation(.linear(duration: 1.0), value: timeRemaining)
                                 }
                                 
-                                // 3. Text Overlay (Non-Animated / Static)
+                                // 3. Text
                                 Text("\(timeRemaining)s")
                                     .font(.headline)
                                     .monospacedDigit()
                                     .foregroundColor(.primary)
                                     .frame(maxWidth: .infinity)
-                                    // This prevents the "dizzying" fade/blur effect on the numbers
                                     .animation(nil, value: timeRemaining)
                             }
                             .frame(height: 50)
@@ -106,16 +154,32 @@ struct ExerciseDetailView: View {
                 
                 // MARK: - History List
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Sets Completed").font(.headline).padding(.leading, 5)
+                    if !exercise.sets.isEmpty {
+                        Text("Sets Completed").font(.headline).padding(.leading, 5)
+                    }
+                    
                     ForEach(exercise.sets) { set in
                         HStack {
                             Text("\(set.reps) reps").bold()
                             Text("×").foregroundStyle(.secondary)
                             Text("\(Int(set.weight)) lbs").bold()
                             Spacer()
-                            Text("RPE \(set.rpe)").font(.caption).padding(6).background(Color(.systemGray6)).cornerRadius(6)
+                            // Handle optional RPE safely
+                            // FIX: Just check if it's greater than 0
+                            if set.rpe > 0 {
+                                Text("RPE \(set.rpe)")
+                                    .font(.caption)
+                                    .padding(6)
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(6)
+                            }
                         }
                         .padding().background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
+                    }
+                    // Add Delete capability
+                    .onDelete { indices in
+                        exercise.sets.remove(atOffsets: indices)
+                        dataManager.save()
                     }
                 }
             }
@@ -127,17 +191,15 @@ struct ExerciseDetailView: View {
         }
     }
     
+    // MARK: - Logic Functions
     func startRest(seconds: Int) {
-        // Reset state
         totalRestTime = Double(seconds)
         timeRemaining = seconds
         timerActive = true
         
-        // 1. Start the visual countdown
-        internalTimer?.invalidate() // Clear any existing timer
+        internalTimer?.invalidate()
         internalTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if timeRemaining > 0 {
-                // withAnimation makes the bar move smoothly
                 withAnimation(.linear(duration: 1.0)) {
                     timeRemaining -= 1
                 }
@@ -148,7 +210,6 @@ struct ExerciseDetailView: View {
             }
         }
         
-        // 2. Schedule Notification (Already working)
         let content = UNMutableNotificationContent()
         content.title = "Rest Finished!"
         content.body = "Time for the next set."
@@ -167,7 +228,11 @@ struct ExerciseDetailView: View {
     func logSet() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+        
+        // Ensure your WorkoutSet struct supports RPE!
+        // If your WorkoutSet struct doesn't have RPE, remove the `rpe: Int(rpe)` part.
         let newSet = WorkoutSet(reps: reps, weight: weight, rpe: Int(rpe))
+        
         exercise.sets.append(newSet)
         dataManager.save()
     }
@@ -177,4 +242,20 @@ struct ExerciseDetailView: View {
         case 1...4: return .green; case 5...7: return .orange; default: return .red
         }
     }
+    
+    // ... at the bottom of the struct ...
+
+    func getPersonalBest(exerciseName: String) -> Double {
+        // 1. Flatten all workouts into a list of sets for this exercise
+        let allSets = dataManager.workouts
+            .filter { $0.isCompleted }
+            .flatMap { $0.exercises }
+            .filter { $0.name == exerciseName }
+            .flatMap { $0.sets }
+        
+        // 2. Find max weight
+        return allSets.map { $0.weight }.max() ?? 0.0
+    }
 }
+
+

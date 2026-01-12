@@ -10,7 +10,6 @@ enum WorkoutFilter: String, CaseIterable, Identifiable {
 
 struct HistoryView: View {
     @EnvironmentObject var dataManager: DataManager
-    // We still observe HealthManager for background updates, even if the button is gone
     @ObservedObject var healthManager = HealthManager.shared
     
     // Sheets
@@ -19,6 +18,9 @@ struct HistoryView: View {
     
     // Filter State
     @State private var selectedFilter: WorkoutFilter = .all
+    
+    // MARK: - FEATURE 1: TIME CAPSULE STATE
+    @State private var throwbackSession: WorkoutSession?
     
     var lifetimeVolume: Int {
         Int(dataManager.workouts.reduce(0) { $0 + $1.totalVolume })
@@ -40,6 +42,64 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             List {
+                // MARK: - FEATURE 1: THE TIME CAPSULE (Flashback)
+                // Surfaces a random past workout to relive the memory
+                if let memory = throwbackSession {
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                Text("Memory Lane")
+                            }
+                            .font(.caption).bold().textCase(.uppercase).foregroundStyle(.white.opacity(0.8))
+                            
+                            // Date
+                            Text(memory.date.formatted(date: .long, time: .omitted))
+                                .font(.title2).bold().foregroundStyle(.white)
+                            
+                            // The "Vibe" (Notes)
+                            if !memory.notes.isEmpty {
+                                Text("\"\(memory.notes)\"")
+                                    .font(.system(.body, design: .serif))
+                                    .italic()
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .padding(.vertical, 4)
+                            }
+                            
+                            // The Photo (If exists)
+                            if let fileName = memory.imageID,
+                               let image = ImageManager.shared.loadImage(fileName: fileName) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(height: 180)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .shadow(radius: 5)
+                            }
+                            
+                            // Navigation to full details
+                            // We use your existing helper function for the destination
+                            NavigationLink(destination: destinationView(for: memory)) {
+                                Text("View Session")
+                                    .font(.headline)
+                                    .foregroundStyle(.black)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.white)
+                                    .cornerRadius(8)
+                            }
+                        }
+                        .padding()
+                        .background(
+                            LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .cornerRadius(16)
+                        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+                    }
+                    .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)) // Makes it stand out
+                    .listRowBackground(Color.clear)
+                }
+                
                 // MARK: - Summary Stats
                 Section {
                     HStack(spacing: 20) {
@@ -131,10 +191,34 @@ struct HistoryView: View {
             }
             .sheet(isPresented: $showRoutineSelection) { RoutineSelectionView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            // Logic to pick a random memory when the view appears
+            .onAppear {
+                if throwbackSession == nil {
+                    throwbackSession = getThrowbackWorkout()
+                }
+            }
         }
     }
     
     // MARK: - Helpers
+    
+    // Logic to find a "worthy" memory
+    func getThrowbackWorkout() -> WorkoutSession? {
+        let completed = dataManager.workouts.filter { $0.isCompleted }
+        
+        // 1. Prioritize workouts with Photos
+        if let withPhoto = completed.filter({ $0.imageID != nil }).randomElement() {
+            return withPhoto
+        }
+        
+        // 2. Prioritize workouts with Notes
+        if let withNotes = completed.filter({ !$0.notes.isEmpty }).randomElement() {
+            return withNotes
+        }
+        
+        // 3. Fallback to any random workout
+        return completed.randomElement()
+    }
     
     @ViewBuilder
     func destinationView(for session: WorkoutSession) -> some View {

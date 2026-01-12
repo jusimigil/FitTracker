@@ -28,6 +28,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Untitled.swift,
 			);
 			target = 16CD82652F112865004E6992 /* FitTracker */;
 		};
@@ -285,7 +286,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FitTracker/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "We need access to show your Now Playing music.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to save workout photos.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitTracker needs your location to tag where your workouts happen.";
@@ -324,7 +328,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FitTracker/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "We need access to show your Now Playing music.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to save workout photos.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your heart rate from your workouts.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need access to sync your workout data.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "FitTracker needs your location to tag where your workouts happen.";

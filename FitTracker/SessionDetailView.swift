@@ -2,6 +2,92 @@ import SwiftUI
 import CoreLocation
 import Combine
 
+// MARK: - 1. ISOLATED HEADER (Cleaned Up)
+struct SessionHeaderView: View {
+    let session: WorkoutSession
+    @ObservedObject var healthManager = HealthManager.shared
+    
+    // Timer state isolated here to prevent main view lag
+    @State private var elapsedTime = "00:00"
+    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            if !session.isCompleted {
+                // ACTIVE HEADER: Minimalist (Just Duration)
+                HStack {
+                    Spacer()
+                    VStack {
+                        Text("Duration").font(.caption).foregroundStyle(.secondary)
+                        Text(elapsedTime).font(.title2).bold().monospacedDigit()
+                    }
+                    Spacer()
+                }
+            } else {
+                // COMPLETED HEADER
+                Text("Workout Completed").font(.headline).foregroundStyle(.green)
+                
+                // Photo Display
+                if let fileName = session.imageID, let uiImage = ImageManager.shared.loadImage(fileName: fileName) {
+                    Image(uiImage: uiImage)
+                        .resizable().scaledToFill()
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                }
+                
+                // Stats (Duration Only)
+                HStack {
+                    if let duration = session.duration {
+                        VStack {
+                            Text("Total Time").font(.caption).foregroundStyle(.secondary)
+                            Text(formatDuration(duration)).font(.title3).bold().monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGroupedBackground))
+        .onAppear { updateTimer() }
+        .onReceive(timer) { _ in updateTimer() }
+    }
+    
+    func updateTimer() {
+        let diff = Date().timeIntervalSince(session.date)
+        elapsedTime = formatDuration(diff)
+    }
+    
+    func formatDuration(_ totalSeconds: TimeInterval) -> String {
+        let hours = Int(totalSeconds) / 3600
+        let minutes = (Int(totalSeconds) % 3600) / 60
+        let seconds = Int(totalSeconds) % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - 2. ISOLATED NOTES (With Done Button)
+struct NotesInputView: View {
+    @Binding var text: String
+    var isDisabled: Bool
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        Section(header: Text("Notes")) {
+            TextField("Session notes...", text: $text, axis: .vertical)
+                .disabled(isDisabled)
+                .focused($isFocused)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { isFocused = false }
+                    }
+                }
+        }
+    }
+}
+
+// MARK: - 3. MAIN SESSION VIEW
 struct SessionDetailView: View {
     let workoutID: UUID
     @EnvironmentObject var dataManager: DataManager
@@ -11,9 +97,11 @@ struct SessionDetailView: View {
     
     @State private var showExercisePicker = false
     @State private var newExerciseName = ""
-    @State private var elapsedTime = "00:00"
     
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    // Sheets
+    @State private var showCamera = false
+    @State private var showSongSearch = false
+    @State private var capturedImage: UIImage?
     
     var workoutIndex: Int? {
         dataManager.workouts.firstIndex(where: { $0.id == workoutID })
@@ -24,50 +112,48 @@ struct SessionDetailView: View {
             let session = dataManager.workouts[index]
             
             VStack(spacing: 0) {
-                // MARK: - Header Dashboard
-                if !session.isCompleted {
-                    HStack {
-                        DashboardItem(title: "Duration", value: elapsedTime, color: .primary)
-                        Spacer()
-                        DashboardItem(title: "Calories", value: "\(Int(healthManager.activeCalories))", color: .orange)
-                    }
-                    .padding()
-                    .background(Color(.systemGroupedBackground))
-                } else {
-                    // MARK: - COMPLETED HEADER (With Calories)
-                    VStack(spacing: 15) {
-                        Text("Workout Completed").font(.headline).foregroundStyle(.green)
-                        HStack(spacing: 40) {
-                            if let duration = session.duration {
-                                VStack {
-                                    Text("Time").font(.caption).foregroundStyle(.secondary)
-                                    Text(formatDuration(duration)).font(.title3).bold().monospacedDigit()
+                // Header (Timer & Stats)
+                SessionHeaderView(session: session)
+                
+                List {
+                    // MARK: MUSIC JOURNAL
+                    Section {
+                        if let songTitle = session.workoutSongTitle {
+                            HStack(spacing: 15) {
+                                if let urlStr = session.workoutSongCoverURL, let url = URL(string: urlStr) {
+                                    AsyncImage(url: url) { img in img.resizable() } placeholder: { Color.purple.opacity(0.2) }
+                                        .scaledToFill().frame(width: 50, height: 50).cornerRadius(8)
+                                } else {
+                                    Image(systemName: "music.note").frame(width: 50, height: 50).background(Color.gray.opacity(0.1)).cornerRadius(8)
+                                }
+                                
+                                VStack(alignment: .leading) {
+                                    Text("Workout Anthem").font(.caption).foregroundStyle(.secondary)
+                                    Text(songTitle).font(.headline).lineLimit(1)
+                                    Text(session.workoutSongArtist ?? "").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button(action: { showSongSearch = true }) {
+                                    Image(systemName: "pencil.circle").foregroundStyle(.blue)
                                 }
                             }
-                            // Displays final saved calories
-                            if let cals = session.activeCalories {
-                                VStack {
-                                    Text("Calories").font(.caption).foregroundStyle(.secondary)
-                                    Text("\(Int(cals))").font(.title3).bold().foregroundStyle(.orange)
-                                }
+                        } else {
+                            Button(action: { showSongSearch = true }) {
+                                Label("Add Workout Anthem", systemImage: "music.note.list").foregroundStyle(.purple)
                             }
                         }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.systemGroupedBackground))
-                }
-                
-                // MARK: - Exercise List
-                List {
-                    Section(header: Text("Notes")) {
-                        TextField("Session notes...", text: $dataManager.workouts[index].notes, axis: .vertical)
-                            .disabled(session.isCompleted)
-                    }
+                    } header: { Text("Music Journal") }
                     
+                    // MARK: NOTES
+                    NotesInputView(text: $dataManager.workouts[index].notes, isDisabled: session.isCompleted)
+                    
+                    // MARK: EXERCISES
                     if !session.isCompleted {
                         Button(action: { showExercisePicker = true }) {
-                            Label("Add Exercise", systemImage: "plus.circle.fill").foregroundColor(.blue)
+                            Label("Add Exercise", systemImage: "plus.circle.fill")
+                                .font(.headline)
+                                .foregroundColor(.blue)
+                                .padding(.vertical, 4)
                         }
                     }
                     
@@ -87,6 +173,7 @@ struct SessionDetailView: View {
                         }
                     }
                     
+                    // Finish Button
                     if !session.isCompleted {
                         Section {
                             Button("Finish Workout", role: .destructive) { finishWorkout(index: index) }
@@ -95,13 +182,34 @@ struct SessionDetailView: View {
                 }
             }
             .navigationTitle(session.type.rawValue.capitalized)
-            .onAppear {
+            .toolbar {
                 if !session.isCompleted {
-                    healthManager.startMonitoring(startTime: session.date)
-                    updateTimer()
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(action: { showCamera = true }) { Label("Add Photo", systemImage: "camera.fill") }
+                    }
                 }
             }
-            .onReceive(timer) { _ in updateTimer() }
+            .onAppear {
+                if !session.isCompleted { healthManager.startMonitoring(startTime: session.date) }
+            }
+            
+            // MARK: SHEETS
+            .sheet(isPresented: $showCamera) { ImagePicker(image: $capturedImage) }
+            .sheet(isPresented: $showSongSearch) {
+                SongSelectionView { selectedSong in
+                    dataManager.workouts[index].workoutSongTitle = selectedSong.trackName
+                    dataManager.workouts[index].workoutSongArtist = selectedSong.artistName
+                    dataManager.workouts[index].workoutSongCoverURL = selectedSong.artworkUrl100
+                    dataManager.save()
+                }
+            }
+            .onChange(of: capturedImage) { _, newImage in
+                if let img = newImage, let fileName = ImageManager.shared.saveImage(img) {
+                    if let oldFile = dataManager.workouts[index].imageID { ImageManager.shared.deleteImage(fileName: oldFile) }
+                    dataManager.workouts[index].imageID = fileName
+                    dataManager.save()
+                }
+            }
             .alert("Add Exercise", isPresented: $showExercisePicker) {
                 TextField("Name", text: $newExerciseName)
                 Button("Add") {
@@ -118,22 +226,17 @@ struct SessionDetailView: View {
         }
     }
     
-    // MARK: - Functions
+    // MARK: - LOGIC
     func finishWorkout(index: Int) {
         let end = Date()
         let start = dataManager.workouts[index].date
         
-        // SAVE FINAL CALORIES
-        let finalCalories = healthManager.activeCalories
-        dataManager.workouts[index].activeCalories = finalCalories
-        
+        // We still fetch HR data for the record, even if we don't show it live
         healthManager.fetchAverageHeartRate(start: start, end: end) { avg in
-            if let hr = avg {
-                dataManager.workouts[index].averageHeartRate = hr
-            }
-            
+            if let hr = avg { dataManager.workouts[index].averageHeartRate = hr }
             dataManager.workouts[index].isCompleted = true
             dataManager.workouts[index].duration = end.timeIntervalSince(start)
+            dataManager.workouts[index].activeCalories = healthManager.activeCalories
             
             if let loc = locationManager.userLocation {
                 dataManager.workouts[index].latitude = loc.latitude
@@ -145,23 +248,9 @@ struct SessionDetailView: View {
             dismiss()
         }
     }
-    
-    func updateTimer() {
-        guard let index = workoutIndex else { return }
-        let startTime = dataManager.workouts[index].date
-        let diff = Date().timeIntervalSince(startTime)
-        elapsedTime = formatDuration(diff)
-    }
-    
-    func formatDuration(_ totalSeconds: TimeInterval) -> String {
-        let hours = Int(totalSeconds) / 3600
-        let minutes = (Int(totalSeconds) % 3600) / 60
-        let seconds = Int(totalSeconds) % 60
-        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%02d:%02d", minutes, seconds)
-    }
 }
 
-// MARK: - MISSING COMPONENT (This fixes the error)
+// MARK: - 4. DASHBOARD HELPER (Required for compiling)
 struct DashboardItem: View {
     let title: String
     let value: String

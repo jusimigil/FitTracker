@@ -63,9 +63,15 @@ struct WorkoutSession: Identifiable, Codable, Equatable {
     var averageHeartRate: Double?
     var latitude: Double?
     var longitude: Double?
-    
-    // Stores the calories burned
     var activeCalories: Double?
+    
+    // Images (Using our new efficient system)
+    var imageID: String?
+    
+    // NEW: Music Journaling
+    var workoutSongTitle: String?
+    var workoutSongArtist: String?
+    var workoutSongCoverURL: String? // We store the URL string
     
     var totalVolume: Double {
         exercises.reduce(0) { $0 + $1.sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) } }
