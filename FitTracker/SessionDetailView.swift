@@ -2,19 +2,18 @@ import SwiftUI
 import CoreLocation
 import Combine
 
-// MARK: - 1. ISOLATED HEADER (Cleaned Up)
+// MARK: - 1. ISOLATED HEADER
 struct SessionHeaderView: View {
     let session: WorkoutSession
     @ObservedObject var healthManager = HealthManager.shared
     
-    // Timer state isolated here to prevent main view lag
+    // Timer state
     @State private var elapsedTime = "00:00"
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         VStack(spacing: 15) {
             if !session.isCompleted {
-                // ACTIVE HEADER: Minimalist (Just Duration)
                 HStack {
                     Spacer()
                     VStack {
@@ -24,19 +23,17 @@ struct SessionHeaderView: View {
                     Spacer()
                 }
             } else {
-                // COMPLETED HEADER
                 Text("Workout Completed").font(.headline).foregroundStyle(.green)
-                
-                // Photo Display
-                if let fileName = session.imageID, let uiImage = ImageManager.shared.loadImage(fileName: fileName) {
+                // Requesting a slightly larger size since this view is bigger
+                if let fileName = session.imageID,
+                   let uiImage = ImageManager.shared.loadImage(fileName: fileName, pointSize: CGSize(width: 400, height: 300)) {
                     Image(uiImage: uiImage)
+                        // ... rest of your code
                         .resizable().scaledToFill()
                         .frame(height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .padding(.horizontal)
                 }
-                
-                // Stats (Duration Only)
                 HStack {
                     if let duration = session.duration {
                         VStack {
@@ -66,7 +63,7 @@ struct SessionHeaderView: View {
     }
 }
 
-// MARK: - 2. ISOLATED NOTES (With Done Button)
+// MARK: - 2. ISOLATED NOTES
 struct NotesInputView: View {
     @Binding var text: String
     var isDisabled: Bool
@@ -98,6 +95,9 @@ struct SessionDetailView: View {
     @State private var showExercisePicker = false
     @State private var newExerciseName = ""
     
+    // QoL: Safety Alert State
+    @State private var showFinishAlert = false
+    
     // Sheets
     @State private var showCamera = false
     @State private var showSongSearch = false
@@ -112,7 +112,6 @@ struct SessionDetailView: View {
             let session = dataManager.workouts[index]
             
             VStack(spacing: 0) {
-                // Header (Timer & Stats)
                 SessionHeaderView(session: session)
                 
                 List {
@@ -173,10 +172,12 @@ struct SessionDetailView: View {
                         }
                     }
                     
-                    // Finish Button
+                    // MARK: - QoL FIX: SAFETY ALERT
                     if !session.isCompleted {
                         Section {
-                            Button("Finish Workout", role: .destructive) { finishWorkout(index: index) }
+                            Button("Finish Workout", role: .destructive) {
+                                showFinishAlert = true
+                            }
                         }
                     }
                 }
@@ -192,7 +193,13 @@ struct SessionDetailView: View {
             .onAppear {
                 if !session.isCompleted { healthManager.startMonitoring(startTime: session.date) }
             }
-            
+            // Alert logic
+            .alert("Finish Workout?", isPresented: $showFinishAlert) {
+                Button("Finish", role: .destructive) { finishWorkout(index: index) }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Great job! Ready to log this session?")
+            }
             // MARK: SHEETS
             .sheet(isPresented: $showCamera) { ImagePicker(image: $capturedImage) }
             .sheet(isPresented: $showSongSearch) {
@@ -226,23 +233,18 @@ struct SessionDetailView: View {
         }
     }
     
-    // MARK: - LOGIC
     func finishWorkout(index: Int) {
         let end = Date()
         let start = dataManager.workouts[index].date
-        
-        // We still fetch HR data for the record, even if we don't show it live
         healthManager.fetchAverageHeartRate(start: start, end: end) { avg in
             if let hr = avg { dataManager.workouts[index].averageHeartRate = hr }
             dataManager.workouts[index].isCompleted = true
             dataManager.workouts[index].duration = end.timeIntervalSince(start)
             dataManager.workouts[index].activeCalories = healthManager.activeCalories
-            
             if let loc = locationManager.userLocation {
                 dataManager.workouts[index].latitude = loc.latitude
                 dataManager.workouts[index].longitude = loc.longitude
             }
-            
             dataManager.save()
             healthManager.stopMonitoring()
             dismiss()
@@ -250,7 +252,7 @@ struct SessionDetailView: View {
     }
 }
 
-// MARK: - 4. DASHBOARD HELPER (Required for compiling)
+// MARK: - HELPER VIEW
 struct DashboardItem: View {
     let title: String
     let value: String

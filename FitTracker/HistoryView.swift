@@ -67,12 +67,14 @@ struct HistoryView: View {
                             }
                             
                             // The Photo (If exists)
+                            // The Photo (If exists)
+                            // We request a downsampled version roughly the size of the view (e.g., 300x200 points)
                             if let fileName = memory.imageID,
-                               let image = ImageManager.shared.loadImage(fileName: fileName) {
+                               let image = ImageManager.shared.loadImage(fileName: fileName, pointSize: CGSize(width: 300, height: 200)) {
                                 Image(uiImage: image)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(height: 180)
+                                    .frame(height: 180) // This frame is visual, the load above is memory
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .shadow(radius: 5)
                             }

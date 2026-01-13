@@ -14,6 +14,29 @@ class RecompManager: ObservableObject {
         self.currentFocus = RecompFocus(rawValue: savedFocus) ?? .standard
     }
     
+    // MARK: - MATH ENGINE (Linear Regression)
+    /// Calculates the slope and intercept of the user's strength curve
+    private func linearRegression(_ points: [(x: Double, y: Double)]) -> (slope: Double, intercept: Double) {
+        guard points.count > 1 else { return (0, 0) }
+        
+        let n = Double(points.count)
+        let sumX = points.reduce(0) { $0 + $1.x }
+        let sumY = points.reduce(0) { $0 + $1.y }
+        let sumXY = points.reduce(0) { $0 + ($1.x * $1.y) }
+        let sumXX = points.reduce(0) { $0 + ($1.x * $1.x) }
+        
+        let slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX)
+        let intercept = (sumY - slope * sumX) / n
+        
+        return (slope, intercept)
+    }
+    
+    // Epley Formula for 1 Rep Max
+    private func estimate1RM(weight: Double, reps: Int) -> Double {
+        if reps == 1 { return weight }
+        return weight * (1 + (Double(reps) / 30.0))
+    }
+
     // MARK: - WEEKLY TARGETS
     var weeklySetTarget: Int {
         switch currentFocus {
@@ -27,30 +50,105 @@ class RecompManager: ObservableObject {
         return currentFocus == .fatLoss ? 10_000 : 8_000
     }
 
-    // MARK: - FLEXIBILITY / DAILY ADVICE (FIXED)
-    func getFlexibleTarget(recoveryScore: Int) -> String {
-        // We calculate a "Daily Slice" of the weekly volume.
-        // Assuming you hit a muscle 2-3 times a week, a heavy day is roughly 1/3 of the weekly target.
+    // MARK: - FEATURE 1: ADVANCED OVERLOAD (Regression-Based)
+    func suggestProgressiveOverload(for exerciseName: String, dataManager: DataManager) -> String {
+        // 1. Gather Data Points (Date vs Estimated 1RM)
+        let history = dataManager.workouts
+            .filter { $0.isCompleted }
+            .sorted(by: { $0.date < $1.date }) // Oldest first for regression
         
+        var points: [(x: Double, y: Double)] = []
+        var lastDate: Date = Date()
+        var lastMax: Double = 0
+        
+        for (index, session) in history.enumerated() {
+            if let exercise = session.exercises.first(where: { $0.name == exerciseName }),
+               let bestSet = exercise.sets.max(by: { $0.weight < $1.weight }) {
+                
+                let e1rm = estimate1RM(weight: bestSet.weight, reps: bestSet.reps)
+                // x = index (session number), y = 1RM
+                points.append((x: Double(index), y: e1rm))
+                
+                lastDate = session.date
+                lastMax = e1rm
+            }
+        }
+        
+        guard points.count >= 3 else {
+            return "Gathering Data... Log at least 3 sessions to unlock trend analysis."
+        }
+        
+        // 2. Calculate Trend
+        let (slope, _) = linearRegression(points)
+        
+        // 3. AI Analysis
+        let daysSinceLast = Date().timeIntervalSince(lastDate) / 86400
+        
+        if daysSinceLast > 14 {
+            return "⚠️ Detraining Risk. Your trend was \(slope > 0 ? "positive" : "flat"), but it's been 2 weeks. Deload 10%."
+        }
+        
+        // Slope Interpretation
+        if slope > 2.5 {
+            // Gaining > 2.5 lbs per session (Newbie Gains / Peaking)
+            let projected = Int(lastMax + slope)
+            return "🚀 High Velocity! You're gaining strength fast. Attempt \(projected) lbs next."
+        } else if slope > 0.5 {
+            // Steady Progress
+            return "📈 Steady Climb. Trend is positive (+\(String(format: "%.1f", slope)) lbs/session). Add 2.5-5 lbs."
+        } else if slope > -1.0 {
+            // Plateau (Flat line)
+            return "🚧 Plateau Detected. Strength is stagnant. Recommendation: Change rep range or increase rest times."
+        } else {
+            // Regression (Getting weaker)
+            return "📉 Fatigue Detected. Your strength is trending down. Recommendation: Take a deload week immediately."
+        }
+    }
+    
+    // MARK: - FEATURE 2: TRAINING DENSITY (Work Capacity)
+    // Measures "Junk Volume". High density = efficient workout.
+    func analyzeTrainingDensity(dataManager: DataManager) -> String {
+        let recent = dataManager.workouts
+            .filter { $0.isCompleted && $0.duration ?? 0 > 0 }
+            .sorted(by: { $0.date > $1.date })
+            .prefix(5)
+        
+        guard !recent.isEmpty else { return "--" }
+        
+        var densities: [Double] = []
+        
+        for session in recent {
+            // Volume (lbs) / Duration (minutes)
+            let minutes = (session.duration ?? 1) / 60
+            let density = session.totalVolume / minutes
+            densities.append(density)
+        }
+        
+        let avgDensity = densities.reduce(0, +) / Double(densities.count)
+        let lastDensity = densities.first ?? 0
+        
+        if lastDensity > (avgDensity * 1.1) {
+            return "🔥 High Intensity. You moved \(Int(lastDensity)) lbs/min (10% above average)."
+        } else if lastDensity < (avgDensity * 0.9) {
+            return "💤 Low Intensity. Rest times may be too long (\(Int(lastDensity)) lbs/min)."
+        } else {
+            return "✅ Consistent Pace. (\(Int(lastDensity)) lbs/min)."
+        }
+    }
+
+    // MARK: - EXISTING LOGIC (Kept for compatibility)
+    func getFlexibleTarget(recoveryScore: Int) -> String {
         if recoveryScore < 4 {
-            // LOW RECOVERY: Do NOT train hard.
             return "⚠️ Low Recovery (\(recoveryScore)/10). Recommendation: Active recovery, stretching, or a complete rest day."
-            
         } else if recoveryScore < 7 {
-            // MODERATE RECOVERY: Maintenance volume.
-            // Target roughly 25% of weekly volume (e.g., 15 / 4 = ~3-4 sets)
             let dailyGoal = max(3, weeklySetTarget / 4)
             return "⚖️ Feeling okay. Aim for a standard session: ~\(dailyGoal) hard sets per muscle group."
-            
         } else {
-            // HIGH RECOVERY: Overload volume.
-            // Target roughly 33% of weekly volume (e.g., 15 / 3 = 5 sets)
             let dailyGoal = max(4, weeklySetTarget / 3)
             return "🔥 You are Fresh! Push for hypertrophy: ~\(dailyGoal) hard sets per muscle group today."
         }
     }
     
-    // MARK: - STATUS (Volume Analysis)
     func analyzeStatus(dataManager: DataManager) -> (status: String, color: Color) {
         let oneWeekAgo = Date().addingTimeInterval(-604800)
         let recentWorkouts = dataManager.workouts.filter { $0.date > oneWeekAgo && $0.isCompleted }
@@ -62,9 +160,7 @@ class RecompManager: ObservableObject {
             }
         }
         
-        // Approximate average sets per major muscle group
         let avgSetsPerMuscle = totalSets / 6
-        
         if avgSetsPerMuscle >= weeklySetTarget {
             return ("Optimal Volume (\(avgSetsPerMuscle) sets/wk)", .green)
         } else if avgSetsPerMuscle >= (weeklySetTarget - 5) {
@@ -74,44 +170,6 @@ class RecompManager: ObservableObject {
         }
     }
     
-    // MARK: - MACHINE LEARNING: RPE AUTOREGULATION
-    func suggestProgressiveOverload(for exerciseName: String, dataManager: DataManager) -> String {
-        let history = dataManager.workouts
-            .filter { $0.isCompleted }
-            .sorted(by: { $0.date > $1.date })
-        
-        guard let lastSession = history.first(where: { session in
-            session.exercises.contains(where: { $0.name == exerciseName })
-        }) else {
-            return "New Exercise! Start with a weight you can lift for 10-12 reps."
-        }
-        
-        guard let lastExercise = lastSession.exercises.first(where: { $0.name == exerciseName }),
-              let bestSet = lastExercise.sets.max(by: { $0.weight < $1.weight })
-        else {
-            return "Track weight to get suggestions."
-        }
-        
-        // ALGORITHM
-        let lastWeight = bestSet.weight
-        let lastReps = bestSet.reps
-        let rpeValue = Double(bestSet.rpe > 0 ? bestSet.rpe : 8)
-        
-        let oneRepMax = lastWeight * (1 + (Double(lastReps) / 30.0))
-        let formattedMax = String(format: "%.0f", oneRepMax)
-        
-        if rpeValue <= 6 {
-            let newWeight = Int(lastWeight + 10)
-            return "Too easy (RPE \(Int(rpeValue))). \n🚀 Jump to \(newWeight) lbs. (Est 1RM: \(formattedMax))"
-        } else if rpeValue >= 9 {
-            return "Grinding (RPE \(Int(rpeValue))). \n🛡️ Stay at \(Int(lastWeight)) lbs. (Est 1RM: \(formattedMax))"
-        } else {
-            let newWeight = Int(lastWeight + 5)
-            return "Optimal (RPE \(Int(rpeValue))). \n📈 Add weight: \(newWeight) lbs. (Est 1RM: \(formattedMax))"
-        }
-    }
-    
-    // MARK: - SYMMETRY
     func analyzeSymmetry(dataManager: DataManager) -> String {
         let oneWeekAgo = Date().addingTimeInterval(-604800)
         let recentWorkouts = dataManager.workouts.filter { $0.date > oneWeekAgo && $0.isCompleted }
@@ -122,10 +180,8 @@ class RecompManager: ObservableObject {
         for workout in recentWorkouts {
             for exercise in workout.exercises {
                 switch exercise.muscleGroup {
-                case .legs:
-                    lowerSets += exercise.sets.count
-                default:
-                    upperSets += exercise.sets.count
+                case .legs: lowerSets += exercise.sets.count
+                default: upperSets += exercise.sets.count
                 }
             }
         }
@@ -141,14 +197,11 @@ class RecompManager: ObservableObject {
         }
     }
     
-    // MARK: - WEAK LINK DETECTOR
     func findLaggingMuscle(dataManager: DataManager) -> String {
         let oneWeekAgo = Date().addingTimeInterval(-604800)
         let recentWorkouts = dataManager.workouts.filter { $0.date > oneWeekAgo && $0.isCompleted }
         
-        var volumeMap: [MuscleGroup: Int] = [
-            .chest: 0, .back: 0, .legs: 0, .shoulders: 0, .arms: 0, .core: 0
-        ]
+        var volumeMap: [MuscleGroup: Int] = [.chest: 0, .back: 0, .legs: 0, .shoulders: 0, .arms: 0, .core: 0]
         
         for workout in recentWorkouts {
             for exercise in workout.exercises {
@@ -157,7 +210,6 @@ class RecompManager: ObservableObject {
         }
         
         let sortedMuscles = volumeMap.sorted { $0.value < $1.value }
-        
         if let weakest = sortedMuscles.first {
             if weakest.value == 0 {
                 return "⚠️ Neglected: \(weakest.key.rawValue). 0 sets this week."
@@ -165,7 +217,6 @@ class RecompManager: ObservableObject {
                 return "⚠️ Lagging: \(weakest.key.rawValue). Only \(weakest.value) sets/week."
             }
         }
-        
         return "✅ Balanced Physique. No weak links detected."
     }
 }

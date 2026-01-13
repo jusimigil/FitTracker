@@ -5,6 +5,9 @@ struct TodayView: View {
     @ObservedObject var recompManager = RecompManager.shared
     @ObservedObject var healthManager = HealthManager.shared
     
+    // NEW: Listen for when the app comes back from background
+    @Environment(\.scenePhase) var scenePhase
+    
     // Auto-Navigation
     @State private var path = NavigationPath()
     
@@ -12,7 +15,6 @@ struct TodayView: View {
     @State private var showRoutineSelection = false
     
     // MARK: - PERSISTENT DATA (Memory)
-    // We replace @State with @AppStorage so it remembers across app restarts
     @AppStorage("dailyRecoveryScore") var dailyRecoveryScore: Double = 8.0
     @AppStorage("lastCheckInDate") var lastCheckInDate: String = ""
     
@@ -24,13 +26,14 @@ struct TodayView: View {
     @State private var cachedWeakLink: String = "Analyzing..."
     @State private var cachedOverload: String = "--"
     @State private var cachedSymmetry: String = "--"
+    @State private var cachedDensity: String = "--"
     
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 20) {
                     
-                    // MARK: - 1. TRAINER BRIEFING (Updated)
+                    // MARK: - 1. TRAINER BRIEFING
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("Trainer Briefing")
@@ -57,7 +60,7 @@ struct TodayView: View {
                                     .font(.body).italic()
                                     .fixedSize(horizontal: false, vertical: true)
                                 
-                                // 2. Weak Link Alert
+                                // 2. Weak Link Alert (Only if urgent)
                                 if cachedWeakLink.contains("⚠️") {
                                     Divider()
                                     Text(cachedWeakLink)
@@ -67,33 +70,45 @@ struct TodayView: View {
                                 }
                             }
                         }
-                        
-                        // Note: Slider Removed as requested.
-                        // The score is now set via the daily popup.
                     }
                     .padding()
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                     
-                    // MARK: - 2. SMART INSIGHTS
+                    // MARK: - 2. ADVANCED SMART INSIGHTS (ML Powered)
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("Smart Insights").font(.headline).foregroundStyle(.secondary)
+                        Text("Smart Insights (ML Powered)").font(.headline).foregroundStyle(.secondary)
                         
-                        // Insight A: Progressive Overload
-                        HStack {
-                            Image(systemName: "arrow.up.right.circle.fill").foregroundStyle(.green).font(.title2)
+                        // Insight A: Strength Trend (Linear Regression)
+                        HStack(alignment: .top) {
+                            Image(systemName: "chart.line.uptrend.xyaxis.circle.fill").foregroundStyle(.green).font(.title2)
                             VStack(alignment: .leading) {
-                                Text("Progressive Overload (Bench)").font(.caption).bold()
-                                Text(cachedOverload).font(.subheadline)
+                                Text("Strength Trend (Bench Press)").font(.caption).bold()
+                                Text(cachedOverload)
+                                    .font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         
                         Divider()
                         
-                        // Insight B: Muscle Balance
-                        HStack {
-                            Image(systemName: "scalemass.fill").foregroundStyle(.blue).font(.title2)
+                        // Insight B: Training Density (Efficiency Analysis)
+                        HStack(alignment: .top) {
+                            Image(systemName: "timer.circle.fill").foregroundStyle(.blue).font(.title2)
+                            VStack(alignment: .leading) {
+                                Text("Training Density").font(.caption).bold()
+                                Text(cachedDensity)
+                                    .font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        // Insight C: Muscle Balance
+                        HStack(alignment: .top) {
+                            Image(systemName: "scalemass.fill").foregroundStyle(.indigo).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Muscle Balance").font(.caption).bold()
                                 Text(cachedSymmetry).font(.subheadline)
@@ -102,8 +117,8 @@ struct TodayView: View {
                         
                         Divider()
                         
-                        // Insight C: Weak Link Detector
-                        HStack {
+                        // Insight D: Weak Link Detector
+                        HStack(alignment: .top) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Weak Link Detector").font(.caption).bold()
@@ -172,7 +187,14 @@ struct TodayView: View {
             // MARK: - LOGIC TRIGGERS
             .onAppear {
                 calculateStats()
-                checkDailyLogin() // <--- Triggers the popup if new day
+                checkDailyLogin()
+            }
+            // NEW: Also check when the app becomes active (from background)
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    checkDailyLogin()
+                    calculateStats() // Refresh stats in case data changed externally
+                }
             }
             .onChange(of: dataManager.workouts) { _, _ in calculateStats() }
             
@@ -208,7 +230,8 @@ struct TodayView: View {
     func calculateStats() {
         cachedStatus = recompManager.analyzeStatus(dataManager: dataManager)
         cachedWeakLink = recompManager.findLaggingMuscle(dataManager: dataManager)
-        cachedOverload = recompManager.suggestProgressiveOverload(for: "Bench", dataManager: dataManager)
+        cachedOverload = recompManager.suggestProgressiveOverload(for: "Bench Press", dataManager: dataManager)
         cachedSymmetry = recompManager.analyzeSymmetry(dataManager: dataManager)
+        cachedDensity = recompManager.analyzeTrainingDensity(dataManager: dataManager)
     }
 }
