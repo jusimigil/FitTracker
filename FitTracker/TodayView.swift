@@ -5,20 +5,15 @@ struct TodayView: View {
     @ObservedObject var recompManager = RecompManager.shared
     @ObservedObject var healthManager = HealthManager.shared
     
-    // NEW: Listen for when the app comes back from background
-    @Environment(\.scenePhase) var scenePhase
-    
     // Auto-Navigation
     @State private var path = NavigationPath()
     
     // UI State
     @State private var showRoutineSelection = false
     
-    // MARK: - PERSISTENT DATA (Memory)
+    // MARK: - PERSISTENT DATA
     @AppStorage("dailyRecoveryScore") var dailyRecoveryScore: Double = 8.0
     @AppStorage("lastCheckInDate") var lastCheckInDate: String = ""
-    
-    // Popup State
     @State private var showDailyCheckIn = false
     
     // Performance Cache
@@ -26,12 +21,27 @@ struct TodayView: View {
     @State private var cachedWeakLink: String = "Analyzing..."
     @State private var cachedOverload: String = "--"
     @State private var cachedSymmetry: String = "--"
-    @State private var cachedDensity: String = "--"
+    
+    // Computed Date String
+    var todaysDate: String {
+        Date().formatted(.dateTime.weekday(.wide).month().day())
+    }
     
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 20) {
+                    
+                    // MARK: - 0. DATE HEADER (New)
+                    HStack {
+                        Text(todaysDate.uppercased())
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 10)
                     
                     // MARK: - 1. TRAINER BRIEFING
                     VStack(alignment: .leading, spacing: 12) {
@@ -39,7 +49,6 @@ struct TodayView: View {
                             Text("Trainer Briefing")
                                 .font(.headline).foregroundStyle(.secondary)
                             Spacer()
-                            // Small indicator of today's score
                             HStack(spacing: 4) {
                                 Image(systemName: "heart.fill").foregroundStyle(.pink)
                                 Text("Recovery: \(Int(dailyRecoveryScore))/10")
@@ -50,17 +59,14 @@ struct TodayView: View {
                             .cornerRadius(8)
                         }
                         
-                        // Combined Advice based on the CHECK-IN score
                         HStack(alignment: .top) {
                             Image(systemName: "quote.opening").foregroundStyle(.purple)
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                // 1. Smart Advice (Based on stored Daily Score)
                                 Text(recompManager.getFlexibleTarget(recoveryScore: Int(dailyRecoveryScore)))
                                     .font(.body).italic()
                                     .fixedSize(horizontal: false, vertical: true)
                                 
-                                // 2. Weak Link Alert (Only if urgent)
                                 if cachedWeakLink.contains("⚠️") {
                                     Divider()
                                     Text(cachedWeakLink)
@@ -76,49 +82,27 @@ struct TodayView: View {
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                     
-                    // MARK: - 2. ADVANCED SMART INSIGHTS (ML Powered)
+                    // MARK: - 2. SMART INSIGHTS
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("Smart Insights (ML Powered)").font(.headline).foregroundStyle(.secondary)
+                        Text("Smart Insights").font(.headline).foregroundStyle(.secondary)
                         
-                        // Insight A: Strength Trend (Linear Regression)
-                        HStack(alignment: .top) {
-                            Image(systemName: "chart.line.uptrend.xyaxis.circle.fill").foregroundStyle(.green).font(.title2)
+                        HStack {
+                            Image(systemName: "arrow.up.right.circle.fill").foregroundStyle(.green).font(.title2)
                             VStack(alignment: .leading) {
-                                Text("Strength Trend (Bench Press)").font(.caption).bold()
-                                Text(cachedOverload)
-                                    .font(.subheadline)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("Progressive Overload (Bench)").font(.caption).bold()
+                                Text(cachedOverload).font(.subheadline)
                             }
                         }
-                        
                         Divider()
-                        
-                        // Insight B: Training Density (Efficiency Analysis)
-                        HStack(alignment: .top) {
-                            Image(systemName: "timer.circle.fill").foregroundStyle(.blue).font(.title2)
-                            VStack(alignment: .leading) {
-                                Text("Training Density").font(.caption).bold()
-                                Text(cachedDensity)
-                                    .font(.subheadline)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        // Insight C: Muscle Balance
-                        HStack(alignment: .top) {
-                            Image(systemName: "scalemass.fill").foregroundStyle(.indigo).font(.title2)
+                        HStack {
+                            Image(systemName: "scalemass.fill").foregroundStyle(.blue).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Muscle Balance").font(.caption).bold()
                                 Text(cachedSymmetry).font(.subheadline)
                             }
                         }
-                        
                         Divider()
-                        
-                        // Insight D: Weak Link Detector
-                        HStack(alignment: .top) {
+                        HStack {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title2)
                             VStack(alignment: .leading) {
                                 Text("Weak Link Detector").font(.caption).bold()
@@ -131,9 +115,8 @@ struct TodayView: View {
                     .cornerRadius(12)
                     .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                     
-                    // MARK: - 3. RECOMP STATUS GRID
+                    // MARK: - 3. STATUS GRID
                     HStack(spacing: 15) {
-                        // Card A: Volume
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Image(systemName: "dumbbell.fill").foregroundStyle(.blue)
@@ -151,7 +134,6 @@ struct TodayView: View {
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                         
-                        // Card B: Activity
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Image(systemName: "figure.walk").foregroundStyle(.green)
@@ -168,7 +150,7 @@ struct TodayView: View {
                         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                     }
                     
-                    // MARK: - 4. ACTION BUTTON
+                    // MARK: - 4. START BUTTON
                     Button(action: { showRoutineSelection = true }) {
                         Label("Start Today's Workout", systemImage: "play.fill")
                             .font(.headline)
@@ -184,21 +166,12 @@ struct TodayView: View {
             .background(Color(.secondarySystemBackground))
             .navigationTitle("Today")
             
-            // MARK: - LOGIC TRIGGERS
+            // MARK: - LOGIC
             .onAppear {
                 calculateStats()
                 checkDailyLogin()
             }
-            // NEW: Also check when the app becomes active (from background)
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
-                    checkDailyLogin()
-                    calculateStats() // Refresh stats in case data changed externally
-                }
-            }
             .onChange(of: dataManager.workouts) { _, _ in calculateStats() }
-            
-            // MARK: - NAVIGATION & SHEETS
             .sheet(isPresented: $showDailyCheckIn) {
                 RecoveryCheckInView()
             }
@@ -213,14 +186,9 @@ struct TodayView: View {
         }
     }
     
-    // MARK: - LOGIC
     func checkDailyLogin() {
-        // Create a simple date string (e.g., "10/24/2025")
         let today = Date().formatted(date: .numeric, time: .omitted)
-        
-        // If the saved date is NOT today, show the popup
         if lastCheckInDate != today {
-            // Add a slight delay so the UI loads first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 showDailyCheckIn = true
             }
@@ -232,6 +200,5 @@ struct TodayView: View {
         cachedWeakLink = recompManager.findLaggingMuscle(dataManager: dataManager)
         cachedOverload = recompManager.suggestProgressiveOverload(for: "Bench Press", dataManager: dataManager)
         cachedSymmetry = recompManager.analyzeSymmetry(dataManager: dataManager)
-        cachedDensity = recompManager.analyzeTrainingDensity(dataManager: dataManager)
     }
 }

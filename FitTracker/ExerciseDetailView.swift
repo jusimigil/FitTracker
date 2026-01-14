@@ -20,12 +20,31 @@ struct ExerciseDetailView: View {
     @State private var internalTimer: Timer?
 
     var body: some View {
-        // QoL FIX: ScrollViewReader allows us to scroll to the bottom automatically
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 25) {
                     
-                    // MARK: - 1. MACHINE LEARNING INSIGHT
+                    // MARK: - 0. MUSCLE SELECTOR
+                    if !readOnly || exercise.sets.isEmpty {
+                        HStack {
+                            Text("Target Muscle:")
+                                .font(.caption).bold().foregroundStyle(.secondary)
+                            Spacer()
+                            Picker("Muscle", selection: $exercise.muscleGroup) {
+                                ForEach(MuscleGroup.allCases, id: \.self) { muscle in
+                                    Text(muscle.rawValue).tag(muscle)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .disabled(readOnly)
+                            .tint(.blue)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                    }
+                    
+                    // MARK: - 1. SMART INSIGHT
                     if !readOnly {
                         HStack(alignment: .top) {
                             Image(systemName: "wand.and.stars")
@@ -67,18 +86,17 @@ struct ExerciseDetailView: View {
                         HStack(spacing: 15) {
                             Button(action: {
                                 let newID = logSet()
-                                // QoL FIX: Scroll to the new set
                                 withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
                             }) {
                                 Text("Log Set")
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 50)
-                                    .background(weight == 0 ? Color.gray : Color.blue) // Visual feedback
+                                    .background(weight == 0 ? Color.gray : Color.blue)
                                     .foregroundColor(.white)
                                     .cornerRadius(12)
                             }
-                            .disabled(weight == 0) // QoL FIX: Prevent ghost sets
+                            .disabled(weight == 0)
                             
                             // Rest Timer
                             if timerActive {
@@ -126,53 +144,29 @@ struct ExerciseDetailView: View {
                                 Text("×").foregroundStyle(.secondary)
                                 Text("\(Int(set.weight)) lbs").bold()
                                 Spacer()
+                                // FIX: No optional binding for Int
                                 if set.rpe > 0 {
                                     Text("RPE \(set.rpe)").font(.caption).padding(6).background(Color(.systemGray6)).cornerRadius(6)
                                 }
                             }
                             .padding().background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
-                            .id(set.id) // QoL FIX: ID needed for scrolling
+                            .id(set.id)
                         }
                         .onDelete { indices in
                             exercise.sets.remove(atOffsets: indices)
                             dataManager.save()
                         }
                     }
-                    // Spacer at the bottom to allow scrolling past the last element
                     Spacer().frame(height: 50).id("bottom")
                 }
                 .padding()
             }
         }
         .navigationTitle(exercise.name)
-        // MARK: - SMART AUTOFILL LOGIC
-        .onAppear {
-            // 1. Same Session: Use the previous set's values
-            if let lastSet = exercise.sets.last {
-                reps = lastSet.reps
-                weight = lastSet.weight
-                rpe = Double(lastSet.rpe)
-            }
-            // 2. History: Find the last time this exercise was performed in a COMPLETED workout
-            else {
-                let history = dataManager.workouts
-                    .filter { $0.isCompleted }
-                    .sorted(by: { $0.date > $1.date })
-                
-                if let lastSession = history.first(where: { $0.exercises.contains(where: { $0.name == exercise.name }) }),
-                   let lastExercise = lastSession.exercises.first(where: { $0.name == exercise.name }),
-                   let lastSet = lastExercise.sets.last {
-                    
-                    reps = lastSet.reps
-                    weight = lastSet.weight
-                    rpe = Double(lastSet.rpe > 0 ? lastSet.rpe : 8)
-                }
-            }
-        }
         .onDisappear { internalTimer?.invalidate() }
     }
     
-    // MARK: - Logic Functions
+    // MARK: - Logic
     func startRest(seconds: Int) {
         totalRestTime = Double(seconds)
         timeRemaining = seconds
@@ -187,25 +181,16 @@ struct ExerciseDetailView: View {
                 generator.notificationOccurred(.success)
             }
         }
-        let content = UNMutableNotificationContent()
-        content.title = "Rest Finished!"
-        content.body = "Time for the next set."
-        content.sound = .default
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(seconds), repeats: false)
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "RestTimer", content: content, trigger: trigger))
     }
     
     func cancelTimer() {
         timerActive = false
         internalTimer?.invalidate()
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["RestTimer"])
     }
     
     func logSet() -> UUID {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
-        
-        // Create the set with a new ID
         let newSet = WorkoutSet(reps: reps, weight: weight, rpe: Int(rpe))
         exercise.sets.append(newSet)
         dataManager.save()

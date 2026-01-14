@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import UserNotifications // Added for notifications
 import Combine
 
 // MARK: - 1. ISOLATED HEADER
@@ -24,11 +25,8 @@ struct SessionHeaderView: View {
                 }
             } else {
                 Text("Workout Completed").font(.headline).foregroundStyle(.green)
-                // Requesting a slightly larger size since this view is bigger
-                if let fileName = session.imageID,
-                   let uiImage = ImageManager.shared.loadImage(fileName: fileName, pointSize: CGSize(width: 400, height: 300)) {
+                if let fileName = session.imageID, let uiImage = ImageManager.shared.loadImage(fileName: fileName) {
                     Image(uiImage: uiImage)
-                        // ... rest of your code
                         .resizable().scaledToFill()
                         .frame(height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -94,14 +92,18 @@ struct SessionDetailView: View {
     
     @State private var showExercisePicker = false
     @State private var newExerciseName = ""
-    
-    // QoL: Safety Alert State
     @State private var showFinishAlert = false
     
     // Sheets
     @State private var showCamera = false
     @State private var showSongSearch = false
     @State private var capturedImage: UIImage?
+    
+    // MARK: - INACTIVITY MONITOR STATE
+    @State private var lastActivityTime = Date()
+    @State private var hasNudged = false
+    let inactivityThreshold: TimeInterval = 300 // 5 Minutes
+    let activityTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect() // Checks every minute
     
     var workoutIndex: Int? {
         dataManager.workouts.firstIndex(where: { $0.id == workoutID })
@@ -172,7 +174,7 @@ struct SessionDetailView: View {
                         }
                     }
                     
-                    // MARK: - QoL FIX: SAFETY ALERT
+                    // MARK: FINISH BUTTON
                     if !session.isCompleted {
                         Section {
                             Button("Finish Workout", role: .destructive) {
@@ -190,17 +192,27 @@ struct SessionDetailView: View {
                     }
                 }
             }
+            // MARK: - LOGIC TRIGGERS
             .onAppear {
-                if !session.isCompleted { healthManager.startMonitoring(startTime: session.date) }
+                if !session.isCompleted {
+                    healthManager.startMonitoring(startTime: session.date)
+                    requestNotificationPermissions()
+                }
             }
-            // Alert logic
+            // Monitor Activity: If data changes (e.g. set logged), reset inactivity timer
+            .onChange(of: dataManager.workouts) { _, _ in
+                resetActivity()
+            }
+            // Check for Inactivity every minute
+            .onReceive(activityTimer) { _ in
+                checkInactivity(isCompleted: session.isCompleted)
+            }
             .alert("Finish Workout?", isPresented: $showFinishAlert) {
                 Button("Finish", role: .destructive) { finishWorkout(index: index) }
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Great job! Ready to log this session?")
             }
-            // MARK: SHEETS
             .sheet(isPresented: $showCamera) { ImagePicker(image: $capturedImage) }
             .sheet(isPresented: $showSongSearch) {
                 SongSelectionView { selectedSong in
@@ -233,6 +245,39 @@ struct SessionDetailView: View {
         }
     }
     
+    // MARK: - INACTIVITY LOGIC
+    func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+    
+    func resetActivity() {
+        lastActivityTime = Date()
+        hasNudged = false
+    }
+    
+    func checkInactivity(isCompleted: Bool) {
+        guard !isCompleted else { return }
+        
+        // If 5 minutes passed since last action AND we haven't nudged yet
+        if Date().timeIntervalSince(lastActivityTime) > inactivityThreshold && !hasNudged {
+            sendNudge()
+            hasNudged = true
+        }
+    }
+    
+    func sendNudge() {
+        let content = UNMutableNotificationContent()
+        content.title = "Still working out?"
+        content.body = "You haven't logged a set in 5 minutes. Keep the momentum going! 💪"
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: "inactivity_nudge", content: content, trigger: trigger)
+        
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    // MARK: - FINISH LOGIC
     func finishWorkout(index: Int) {
         let end = Date()
         let start = dataManager.workouts[index].date

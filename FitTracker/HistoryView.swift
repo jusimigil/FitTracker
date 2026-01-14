@@ -19,7 +19,7 @@ struct HistoryView: View {
     // Filter State
     @State private var selectedFilter: WorkoutFilter = .all
     
-    // MARK: - FEATURE 1: TIME CAPSULE STATE
+    // Flashback State
     @State private var throwbackSession: WorkoutSession?
     
     var lifetimeVolume: Int {
@@ -28,24 +28,31 @@ struct HistoryView: View {
     
     var filteredWorkouts: [WorkoutSession] {
         let sortedList = dataManager.workouts.sorted(by: { $0.date > $1.date })
-        
         switch selectedFilter {
-        case .all:
-            return sortedList
-        case .strength:
-            return sortedList.filter { $0.type == .strength }
-        case .cardio:
-            return sortedList.filter { $0.type != .strength }
+        case .all: return sortedList
+        case .strength: return sortedList.filter { $0.type == .strength }
+        case .cardio: return sortedList.filter { $0.type != .strength }
         }
     }
     
     var body: some View {
         NavigationStack {
-            List {
-                // MARK: - FEATURE 1: THE TIME CAPSULE (Flashback)
-                // Surfaces a random past workout to relive the memory
-                if let memory = throwbackSession {
-                    Section {
+            ScrollView {
+                VStack(spacing: 20) {
+                    
+                    // MARK: - 1. CONSISTENCY HEAT MAP
+                    VStack(alignment: .leading) {
+                        Text("Consistency").font(.headline).padding(.horizontal)
+                        CalendarGridView(workouts: dataManager.workouts)
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .shadow(radius: 1)
+                    }
+                    .padding(.horizontal)
+                    
+                    // MARK: - 2. TIME CAPSULE (Flashback)
+                    if let memory = throwbackSession {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Image(systemName: "clock.arrow.circlepath")
@@ -53,223 +60,197 @@ struct HistoryView: View {
                             }
                             .font(.caption).bold().textCase(.uppercase).foregroundStyle(.white.opacity(0.8))
                             
-                            // Date
                             Text(memory.date.formatted(date: .long, time: .omitted))
                                 .font(.title2).bold().foregroundStyle(.white)
                             
-                            // The "Vibe" (Notes)
                             if !memory.notes.isEmpty {
                                 Text("\"\(memory.notes)\"")
                                     .font(.system(.body, design: .serif))
-                                    .italic()
-                                    .foregroundStyle(.white.opacity(0.9))
-                                    .padding(.vertical, 4)
+                                    .italic().foregroundStyle(.white.opacity(0.9))
                             }
                             
-                            // The Photo (If exists)
-                            // The Photo (If exists)
-                            // We request a downsampled version roughly the size of the view (e.g., 300x200 points)
-                            if let fileName = memory.imageID,
-                               let image = ImageManager.shared.loadImage(fileName: fileName, pointSize: CGSize(width: 300, height: 200)) {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(height: 180) // This frame is visual, the load above is memory
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .shadow(radius: 5)
-                            }
-                            
-                            // Navigation to full details
-                            // We use your existing helper function for the destination
                             NavigationLink(destination: destinationView(for: memory)) {
-                                Text("View Session")
-                                    .font(.headline)
-                                    .foregroundStyle(.black)
-                                    .padding(.vertical, 10)
+                                Text("View Session").bold()
                                     .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
                                     .background(Color.white)
+                                    .foregroundStyle(.purple)
                                     .cornerRadius(8)
                             }
                         }
                         .padding()
-                        .background(
-                            LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .cornerRadius(16)
-                        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+                        .background(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
                     }
-                    .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)) // Makes it stand out
-                    .listRowBackground(Color.clear)
-                }
-                
-                // MARK: - Summary Stats
-                Section {
+                    
+                    // MARK: - 3. SUMMARY STATS
                     HStack(spacing: 20) {
                         VStack {
                             Text("\(dataManager.workouts.count)")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundStyle(.blue)
-                            Text("Workouts").font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                                .font(.title).bold().foregroundStyle(.blue)
+                            Text("Workouts").font(.caption).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
-                        Divider()
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        
                         VStack {
                             Text(formatVolume(lifetimeVolume))
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundStyle(.blue)
-                            Text("Lbs Lifted").font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+                                .font(.title).bold().foregroundStyle(.blue)
+                            Text("Lbs Lifted").font(.caption).textCase(.uppercase).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
                     }
-                    .padding(.vertical, 10)
-                    .listRowBackground(Color(.secondarySystemBackground))
-                }
-                
-                // MARK: - Actions (Start Button Only)
-                Section {
-                    Button(action: { showRoutineSelection = true }) {
-                        Label("Start Workout", systemImage: "plus")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                    }
-                    .listRowBackground(Color.blue)
-                    .foregroundStyle(.white)
-                }
-                
-                // MARK: - Filter & History
-                Section(header: Text("History")) {
-                    Picker("Filter", selection: $selectedFilter) {
-                        ForEach(WorkoutFilter.allCases) { filter in
-                            Text(filter.rawValue).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal)
                     
-                    if filteredWorkouts.isEmpty {
-                        Text("No workouts found").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(filteredWorkouts) { session in
-                            NavigationLink(destination: destinationView(for: session)) {
-                                HStack {
-                                    Image(systemName: getIcon(for: session.type))
-                                        .foregroundStyle(.white)
-                                        .padding(8)
-                                        .background(getColor(for: session.type))
-                                        .clipShape(Circle())
-                                    
-                                    VStack(alignment: .leading) {
-                                        Text(session.type.rawValue.capitalized).font(.headline)
-                                        Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    
-                                    if session.type == .strength {
-                                        Text("\(Int(session.totalVolume)) lbs")
-                                            .font(.caption).bold().padding(6)
-                                            .background(Color.blue.opacity(0.1)).foregroundStyle(.blue).cornerRadius(8)
-                                    } else {
-                                        let miles = (session.distance ?? 0) * 0.000621371
-                                        Text(String(format: "%.2f mi", miles))
-                                            .font(.caption).bold().padding(6)
-                                            .background(Color.green.opacity(0.1)).foregroundStyle(.green).cornerRadius(8)
+                    // MARK: - 4. HISTORY LOG
+                    VStack(alignment: .leading) {
+                        Text("Log").font(.headline).padding(.horizontal)
+                        
+                        Picker("Filter", selection: $selectedFilter) {
+                            ForEach(WorkoutFilter.allCases) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                        
+                        if filteredWorkouts.isEmpty {
+                            Text("No workouts found")
+                                .foregroundStyle(.secondary)
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else {
+                            LazyVStack(spacing: 12) {
+                                ForEach(filteredWorkouts) { session in
+                                    NavigationLink(destination: destinationView(for: session)) {
+                                        HStack {
+                                            VStack(alignment: .leading) {
+                                                Text(session.type.rawValue.capitalized)
+                                                    .font(.headline)
+                                                    .foregroundStyle(.primary)
+                                                Text(session.date.formatted(date: .abbreviated, time: .shortened))
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            if session.type == .strength {
+                                                Text("\(Int(session.totalVolume)) lbs")
+                                                    .font(.caption).bold()
+                                                    .padding(6).background(Color.blue.opacity(0.1)).foregroundStyle(.blue).cornerRadius(6)
+                                            }
+                                        }
+                                        .padding()
+                                        .background(Color(.systemBackground))
+                                        .cornerRadius(12)
+                                        .shadow(radius: 1)
                                     }
                                 }
                             }
+                            .padding(.horizontal)
                         }
-                        .onDelete(perform: deleteWorkout)
                     }
                 }
+                .padding(.vertical)
             }
-            .navigationTitle("FitTracker")
+            .background(Color(.secondarySystemBackground))
+            .navigationTitle("History")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(action: { showSettings = true }) {
-                        Image(systemName: "gear")
-                    }
+                    Button(action: { showSettings = true }) { Image(systemName: "gear") }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: { showRoutineSelection = true }) { Image(systemName: "plus") }
                 }
             }
             .sheet(isPresented: $showRoutineSelection) { RoutineSelectionView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
-            // Logic to pick a random memory when the view appears
             .onAppear {
-                if throwbackSession == nil {
-                    throwbackSession = getThrowbackWorkout()
-                }
+                if throwbackSession == nil { throwbackSession = getThrowbackWorkout() }
             }
         }
     }
     
-    // MARK: - Helpers
-    
-    // Logic to find a "worthy" memory
+    // MARK: - CALENDAR GRID (Fixed Headers)
+    struct CalendarGridView: View {
+        let workouts: [WorkoutSession]
+        
+        // Generate last 28 days
+        let days: [Date] = (-27...0).map { Calendar.current.date(byAdding: .day, value: $0, to: Date())! }
+        
+        // Offset for the first day (align to Sunday start)
+        var offset: Int {
+            let firstDay = days.first ?? Date()
+            let weekday = Calendar.current.component(.weekday, from: firstDay)
+            return weekday - 1 // Sunday=1 -> 0
+        }
+        
+        let headerSymbols = ["S", "M", "T", "W", "T", "F", "S"]
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Last 4 Weeks").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "flame.fill").font(.caption).foregroundStyle(.orange)
+                    Text("Streak Active").font(.caption).bold()
+                }
+                
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                    // FIX: Use indices to force every letter to render
+                    ForEach(0..<7, id: \.self) { index in
+                        Text(headerSymbols[index])
+                            .font(.caption2)
+                            .bold()
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    // Spacers for alignment
+                    ForEach(0..<offset, id: \.self) { _ in
+                        Color.clear.frame(height: 30)
+                    }
+                    
+                    // Days
+                    ForEach(days, id: \.self) { date in
+                        let isWorkout = workouts.contains { Calendar.current.isDate($0.date, inSameDayAs: date) && $0.isCompleted }
+                        let isToday = Calendar.current.isDateInToday(date)
+                        
+                        ZStack {
+                            Circle()
+                                .fill(isWorkout ? Color.blue : Color.gray.opacity(0.1))
+                            
+                            if isToday {
+                                Circle().stroke(Color.blue, lineWidth: 2)
+                            }
+                            
+                            Text(date.formatted(.dateTime.day()))
+                                .font(.caption2)
+                                .foregroundStyle(isWorkout ? .white : .primary)
+                        }
+                        .frame(height: 30)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - HELPERS
     func getThrowbackWorkout() -> WorkoutSession? {
-        let completed = dataManager.workouts.filter { $0.isCompleted }
-        
-        // 1. Prioritize workouts with Photos
-        if let withPhoto = completed.filter({ $0.imageID != nil }).randomElement() {
-            return withPhoto
-        }
-        
-        // 2. Prioritize workouts with Notes
-        if let withNotes = completed.filter({ !$0.notes.isEmpty }).randomElement() {
-            return withNotes
-        }
-        
-        // 3. Fallback to any random workout
-        return completed.randomElement()
+        dataManager.workouts.filter { $0.isCompleted && !$0.notes.isEmpty }.randomElement() ?? dataManager.workouts.filter{$0.isCompleted}.randomElement()
     }
     
     @ViewBuilder
     func destinationView(for session: WorkoutSession) -> some View {
-        if session.type == .strength {
-            SessionDetailView(workoutID: session.id)
-        } else {
-            VStack {
-                Text(session.type.rawValue.capitalized).font(.largeTitle).bold()
-                Text(session.date.formatted())
-                Divider().padding()
-                Text("Distance: \(String(format: "%.2f", (session.distance ?? 0) * 0.000621371)) mi")
-                Text("Duration: \(String(format: "%.0f", (session.duration ?? 0) / 60)) min")
-                if let cals = session.activeCalories {
-                    Text("Calories: \(Int(cals))").foregroundStyle(.orange)
-                }
-            }
-        }
-    }
-    
-    func getIcon(for type: WorkoutType) -> String {
-        switch type {
-        case .strength: return "dumbbell.fill"
-        case .run: return "figure.run"
-        case .walk: return "figure.walk"
-        case .cycle: return "bicycle"
-        case .swim: return "figure.pool.swim"
-        }
-    }
-    
-    func getColor(for type: WorkoutType) -> Color {
-        switch type {
-        case .strength: return .blue
-        default: return .green
-        }
-    }
-    
-    func deleteWorkout(at offsets: IndexSet) {
-        offsets.forEach { index in
-            let sessionToDelete = filteredWorkouts[index]
-            if let indexInMain = dataManager.workouts.firstIndex(where: { $0.id == sessionToDelete.id }) {
-                dataManager.workouts.remove(at: indexInMain)
-            }
-        }
-        dataManager.save()
+        if session.type == .strength { SessionDetailView(workoutID: session.id) }
+        else { Text("Cardio Details") }
     }
     
     func formatVolume(_ volume: Int) -> String {
-        if volume >= 1_000_000 { return String(format: "%.1fM", Double(volume) / 1_000_000) }
-        else if volume >= 1_000 { return String(format: "%.1fk", Double(volume) / 1_000) }
-        else { return "\(volume)" }
+        if volume >= 1_000_000 { return String(format: "%.1fM", Double(volume)/1_000_000) }
+        return volume >= 1_000 ? String(format: "%.1fk", Double(volume)/1_000) : "\(volume)"
     }
 }
