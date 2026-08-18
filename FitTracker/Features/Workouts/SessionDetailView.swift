@@ -1,63 +1,134 @@
 import SwiftUI
 import CoreLocation
-import UserNotifications // Added for notifications
+import UserNotifications
 import Combine
 
 // MARK: - 1. ISOLATED HEADER
+
 struct SessionHeaderView: View {
+    
     let session: WorkoutSession
     @ObservedObject var healthManager = HealthManager.shared
     
-    // Timer state
-    @State private var elapsedTime = "00:00"
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    
     var body: some View {
         VStack(spacing: 15) {
+            
             if !session.isCompleted {
-                HStack {
-                    Spacer()
-                    VStack {
-                        Text("Duration").font(.caption).foregroundStyle(.secondary)
-                        Text(elapsedTime).font(.title2).bold().monospacedDigit()
+                
+                // TimelineView drives a reliable visual refresh
+                // without storing elapsed time in @State.
+                TimelineView(
+                    .periodic(
+                        from: .now,
+                        by: 1.0
+                    )
+                ) { context in
+                    
+                    HStack {
+                        Spacer()
+                        
+                        VStack {
+                            Text("Duration")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(
+                                formatDuration(
+                                    max(
+                                        0,
+                                        context.date.timeIntervalSince(
+                                            session.date
+                                        )
+                                    )
+                                )
+                            )
+                            .font(.title2)
+                            .bold()
+                            .monospacedDigit()
+                        }
+                        
+                        Spacer()
                     }
-                    Spacer()
                 }
+                
             } else {
-                Text("Workout Completed").font(.headline).foregroundStyle(.green)
-                if let fileName = session.imageID, let uiImage = ImageManager.shared.loadImage(fileName: fileName) {
+                
+                Text("Workout Completed")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+                
+                if let fileName = session.imageID,
+                   let uiImage = ImageManager.shared.loadImage(
+                    fileName: fileName
+                   ) {
+                    
                     Image(uiImage: uiImage)
-                        .resizable().scaledToFill()
+                        .resizable()
+                        .scaledToFill()
                         .frame(height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 12
+                            )
+                        )
                         .padding(.horizontal)
                 }
+                
                 HStack {
                     if let duration = session.duration {
+                        
                         VStack {
-                            Text("Total Time").font(.caption).foregroundStyle(.secondary)
-                            Text(formatDuration(duration)).font(.title3).bold().monospacedDigit()
+                            Text("Total Time")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(
+                                formatDuration(duration)
+                            )
+                            .font(.title3)
+                            .bold()
+                            .monospacedDigit()
                         }
                     }
                 }
             }
         }
         .padding()
-        .background(Color(.systemGroupedBackground))
-        .onAppear { updateTimer() }
-        .onReceive(timer) { _ in updateTimer() }
+        .background(
+            Color(.systemGroupedBackground)
+        )
     }
     
-    func updateTimer() {
-        let diff = Date().timeIntervalSince(session.date)
-        elapsedTime = formatDuration(diff)
-    }
     
-    func formatDuration(_ totalSeconds: TimeInterval) -> String {
-        let hours = Int(totalSeconds) / 3600
-        let minutes = (Int(totalSeconds) % 3600) / 60
-        let seconds = Int(totalSeconds) % 60
-        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%02d:%02d", minutes, seconds)
+    // MARK: - Duration Formatting
+    
+    private func formatDuration(
+        _ totalSeconds: TimeInterval
+    ) -> String {
+        
+        let seconds = max(
+            0,
+            Int(totalSeconds)
+        )
+        
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainingSeconds = seconds % 60
+        
+        if hours > 0 {
+            return String(
+                format: "%d:%02d:%02d",
+                hours,
+                minutes,
+                remainingSeconds
+            )
+        }
+        
+        return String(
+            format: "%02d:%02d",
+            minutes,
+            remainingSeconds
+        )
     }
 }
 
@@ -94,19 +165,25 @@ struct SessionDetailView: View {
     @State private var newExerciseName = ""
     @State private var showFinishAlert = false
     
-    // Sheets
     @State private var showCamera = false
     @State private var showSongSearch = false
     @State private var capturedImage: UIImage?
     
-    // MARK: - INACTIVITY MONITOR STATE
-    @State private var lastActivityTime = Date()
-    @State private var hasNudged = false
+    @State private var showWorkoutSummary = false
+    @State private var summarySession: WorkoutSession?
+    @State private var summaryPRs: [PersonalRecord] = []
+    
     let inactivityThreshold: TimeInterval = 300 // 5 Minutes
-    let activityTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect() // Checks every minute
     
     var workoutIndex: Int? {
         dataManager.workouts.firstIndex(where: { $0.id == workoutID })
+    }
+    
+    // Display Logic Helper
+    func displayTitle(for session: WorkoutSession) -> String {
+        if let title = session.workoutTitle, !title.isEmpty { return title }
+        if !session.notes.isEmpty && session.notes.count < 30 { return session.notes }
+        return session.type.rawValue.capitalized
     }
 
     var body: some View {
@@ -159,7 +236,7 @@ struct SessionDetailView: View {
                     }
                     
                     ForEach($dataManager.workouts[index].exercises) { $ex in
-                        NavigationLink(destination: ExerciseDetailView(exercise: $ex, readOnly: session.isCompleted)) {
+                        NavigationLink(destination: ExerciseDetailView(exercise: $ex, readOnly: session.isCompleted, workoutID: workoutID)) {
                             HStack {
                                 Text(ex.name).font(.headline)
                                 Spacer()
@@ -174,7 +251,6 @@ struct SessionDetailView: View {
                         }
                     }
                     
-                    // MARK: FINISH BUTTON
                     if !session.isCompleted {
                         Section {
                             Button("Finish Workout", role: .destructive) {
@@ -184,7 +260,8 @@ struct SessionDetailView: View {
                     }
                 }
             }
-            .navigationTitle(session.type.rawValue.capitalized)
+            // NEW: Use the smart display title
+            .navigationTitle(displayTitle(for: session))
             .toolbar {
                 if !session.isCompleted {
                     ToolbarItem(placement: .bottomBar) {
@@ -192,20 +269,17 @@ struct SessionDetailView: View {
                     }
                 }
             }
-            // MARK: - LOGIC TRIGGERS
             .onAppear {
                 if !session.isCompleted {
                     healthManager.startMonitoring(startTime: session.date)
                     requestNotificationPermissions()
+                    resetInactivityTimer()
                 }
             }
-            // Monitor Activity: If data changes (e.g. set logged), reset inactivity timer
             .onChange(of: dataManager.workouts) { _, _ in
-                resetActivity()
-            }
-            // Check for Inactivity every minute
-            .onReceive(activityTimer) { _ in
-                checkInactivity(isCompleted: session.isCompleted)
+                if !session.isCompleted {
+                    resetInactivityTimer()
+                }
             }
             .alert("Finish Workout?", isPresented: $showFinishAlert) {
                 Button("Finish", role: .destructive) { finishWorkout(index: index) }
@@ -222,7 +296,23 @@ struct SessionDetailView: View {
                     dataManager.save()
                 }
             }
-            .onChange(of: capturedImage) { _, newImage in
+            .sheet(
+                isPresented: $showWorkoutSummary,
+                onDismiss: {
+                    // The workout is already complete.
+                    // Once the summary is dismissed, leave
+                    // the completed SessionDetailView as well.
+                    dismiss()
+                }
+            ) {
+                if let summarySession {
+                    WorkoutSummaryView(
+                        session: summarySession,
+                        personalRecords: summaryPRs
+                    )
+                    .environmentObject(dataManager)
+                }
+            }            .onChange(of: capturedImage) { _, newImage in
                 if let img = newImage, let fileName = ImageManager.shared.saveImage(img) {
                     if let oldFile = dataManager.workouts[index].imageID { ImageManager.shared.deleteImage(fileName: oldFile) }
                     dataManager.workouts[index].imageID = fileName
@@ -245,73 +335,78 @@ struct SessionDetailView: View {
         }
     }
     
-    // MARK: - INACTIVITY LOGIC
     func requestNotificationPermissions() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
     
-    func resetActivity() {
-        lastActivityTime = Date()
-        hasNudged = false
-    }
-    
-    func checkInactivity(isCompleted: Bool) {
-        guard !isCompleted else { return }
+    func resetInactivityTimer() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["inactivity_nudge"])
         
-        // If 5 minutes passed since last action AND we haven't nudged yet
-        if Date().timeIntervalSince(lastActivityTime) > inactivityThreshold && !hasNudged {
-            sendNudge()
-            hasNudged = true
-        }
-    }
-    
-    func sendNudge() {
         let content = UNMutableNotificationContent()
         content.title = "Still working out?"
         content.body = "You haven't logged a set in 5 minutes. Keep the momentum going! 💪"
         content.sound = .default
         
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: inactivityThreshold, repeats: false)
         let request = UNNotificationRequest(identifier: "inactivity_nudge", content: content, trigger: trigger)
         
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error scheduling nudge: \(error)")
+            }
+        }
     }
     
-    // MARK: - FINISH LOGIC
+    func cancelInactivityNudge() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["inactivity_nudge"])
+    }
+    
     func finishWorkout(index: Int) {
+        cancelInactivityNudge()
+        
         let end = Date()
         let start = dataManager.workouts[index].date
+        let finishedWorkoutID = dataManager.workouts[index].id
+        
         healthManager.fetchAverageHeartRate(start: start, end: end) { avg in
-            if let hr = avg { dataManager.workouts[index].averageHeartRate = hr }
+            
+            // Update workout information.
+            if let hr = avg {
+                dataManager.workouts[index].averageHeartRate = hr
+            }
+            
             dataManager.workouts[index].isCompleted = true
-            dataManager.workouts[index].duration = end.timeIntervalSince(start)
-            dataManager.workouts[index].activeCalories = healthManager.activeCalories
+            dataManager.workouts[index].duration =
+                end.timeIntervalSince(start)
+            
+            dataManager.workouts[index].activeCalories =
+                healthManager.activeCalories
+            
             if let loc = locationManager.userLocation {
                 dataManager.workouts[index].latitude = loc.latitude
                 dataManager.workouts[index].longitude = loc.longitude
             }
+            
+            // Capture the completed workout before presenting
+            // the summary.
+            let completedSession = dataManager.workouts[index]
+            
+            // Get only the PRs earned during THIS workout.
+            let earnedPRs = dataManager.personalRecords.filter {
+                $0.workoutID == finishedWorkoutID
+            }
+            
+            // Save everything before showing the summary.
             dataManager.save()
             healthManager.stopMonitoring()
-            dismiss()
-        }
-    }
-}
 
-// MARK: - HELPER VIEW
-struct DashboardItem: View {
-    let title: String
-    let value: String
-    let color: Color
-    var icon: String? = nil
-    
-    var body: some View {
-        VStack {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 2) {
-                if let icon = icon { Image(systemName: icon).foregroundStyle(color) }
-                Text(value).font(.title2).bold().foregroundStyle(color).monospacedDigit()
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+            
+            DispatchQueue.main.async {
+                summarySession = completedSession
+                summaryPRs = earnedPRs
+                showWorkoutSummary = true
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-}
+    }}

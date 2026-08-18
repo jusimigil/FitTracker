@@ -4,26 +4,57 @@ struct RoutineSelectionView: View {
     @EnvironmentObject var dataManager: DataManager
     @Environment(\.dismiss) var dismiss
     
+    var recommendedMuscle: MuscleGroup?
     var onWorkoutCreated: ((UUID) -> Void)?
     
-    // 1. The Specific Routines
     let routineNames = [
-        "Back / Bi",
-        "Chest / Tri",
+        "Pull",
+        "Push",
         "Upper Body",
         "Lower Body",
-        "Legs (Hamstring)",
-        "Legs (Quads)",
+        "Legs",
+        "Posterior",
+        "Anterior",
         "Full Body"
     ]
     
     var body: some View {
         NavigationStack {
             List {
+                if let muscle = recommendedMuscle {
+                    Section {
+                        Button {
+                            createRecommendedWorkout(for: muscle)
+                        } label: {
+                            HStack {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle(.yellow)
+                                    .font(.title2)
+                                    .frame(width: 30)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Recommended for You")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                    
+                                    Text("Focus on \(muscle.rawValue)")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
                 Section(header: Text("Select Routine")) {
                     ForEach(routineNames, id: \.self) { name in
                         Button(action: { createWorkout(routineName: name) }) {
-                            HStack(alignment: .center) { // Align center so icon stays centered
+                            HStack(alignment: .center) {
                                 Image(systemName: getIcon(for: name))
                                     .foregroundStyle(.blue)
                                     .frame(width: 30)
@@ -34,12 +65,11 @@ struct RoutineSelectionView: View {
                                         .foregroundStyle(.primary)
                                         .font(.headline)
                                     
-                                    // 2. SHOW EXERCISES INSTEAD OF "RESUME"
                                     if hasHistory(for: name) {
                                         Text(getLastExercises(for: name))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
-                                            .lineLimit(2) // Limit to 2 lines to keep UI clean
+                                            .lineLimit(2)
                                             .multilineTextAlignment(.leading)
                                     } else {
                                         Text("New (Blank)")
@@ -55,6 +85,13 @@ struct RoutineSelectionView: View {
                         }
                     }
                 }
+                
+                Section(header: Text("Custom")) {
+                    Button(action: { createWorkout(routineName: "New Routine") }) {
+                        Label("Empty Workout", systemImage: "plus.square.dashed")
+                            .foregroundStyle(.blue)
+                    }
+                }
             }
             .navigationTitle("Start Workout")
             .toolbar {
@@ -68,15 +105,14 @@ struct RoutineSelectionView: View {
     // MARK: - LOGIC
     
     func hasHistory(for name: String) -> Bool {
-        return dataManager.workouts.contains(where: { $0.notes == name && $0.isCompleted })
+        // Checks both the new Title field AND the old Notes field for backward compatibility
+        return dataManager.workouts.contains(where: { ($0.workoutTitle == name || $0.notes == name) && $0.isCompleted })
     }
     
-    // NEW FUNCTION: Fetch the list of exercises as a string
     func getLastExercises(for routineName: String) -> String {
-        // Find the most recent completed session with this routine name
         if let lastSession = dataManager.workouts
-            .filter({ $0.notes == routineName && $0.isCompleted })
-            .sorted(by: { $0.date > $1.date }) // Newest first
+            .filter({ ($0.workoutTitle == routineName || $0.notes == routineName) && $0.isCompleted })
+            .sorted(by: { $0.date > $1.date })
             .first {
             
             let names = lastSession.exercises.map { $0.name }
@@ -87,16 +123,22 @@ struct RoutineSelectionView: View {
     }
     
     func createWorkout(routineName: String) {
-        var newSession = WorkoutSession(date: Date(), type: .strength)
-        newSession.notes = routineName // Save Routine Name in notes for next time
+        workoutStartHaptic()
         
-        // MEMORY SYSTEM
+        var newSession = WorkoutSession(
+            date: Date(),
+            type: .strength
+        )
+        
+        // NEW: Set the Title explicitly
+        newSession.workoutTitle = routineName
+        
+        // MEMORY SYSTEM: If previous log exists, copy exercises (but clear sets)
         if let lastSession = dataManager.workouts
-            .filter({ $0.notes == routineName && $0.isCompleted })
+            .filter({ ($0.workoutTitle == routineName || $0.notes == routineName) && $0.isCompleted })
             .sorted(by: { $0.date > $1.date })
             .first {
             
-            // Copy exercises (Names + Muscle Group) but clear sets
             for oldEx in lastSession.exercises {
                 var newEx = Exercise(name: oldEx.name)
                 newEx.muscleGroup = oldEx.muscleGroup
@@ -109,15 +151,49 @@ struct RoutineSelectionView: View {
         
         dismiss()
         
-        // Delay navigation slightly to allow sheet to dismiss
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             onWorkoutCreated?(newSession.id)
         }
+    }
+    
+    func createRecommendedWorkout(for muscle: MuscleGroup) {
+        
+        let routineName: String
+        
+        switch muscle {
+        case .chest:
+            routineName = "Push"
+            
+        case .back:
+            routineName = "Pull"
+            
+        case .legs:
+            routineName = "Lower Body"
+            
+        case .shoulders:
+            routineName = "Upper Body"
+            
+        case .arms:
+            routineName = "Upper Body"
+            
+        case .core:
+            routineName = "Full Body"
+        }
+        
+        createWorkout(routineName: routineName)
     }
     
     func getIcon(for name: String) -> String {
         if name.contains("Legs") || name.contains("Lower") { return "figure.walk" }
         if name.contains("Full") { return "figure.cross.training" }
         return "dumbbell.fill"
+    }
+    
+    func workoutStartHaptic() {
+        let generator = UIImpactFeedbackGenerator(
+            style: .medium
+        )
+        generator.prepare()
+        generator.impactOccurred()
     }
 }

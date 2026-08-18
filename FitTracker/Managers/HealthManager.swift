@@ -8,6 +8,7 @@ class HealthManager: ObservableObject {
     
     @Published var currentHeartRate: Double = 0
     @Published var activeCalories: Double = 0
+    @Published var currentSteps: Int = 0 // <--- NEW: Live Step Count
     
     // Live Monitoring
     private var heartRateQuery: HKObserverQuery?
@@ -23,21 +24,41 @@ class HealthManager: ObservableObject {
         let types: Set = [
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .stepCount)!, // <--- NEW: Request Steps
             HKObjectType.workoutType()
         ]
         healthStore.requestAuthorization(toShare: [], read: types) { _, _ in }
     }
     
-    // MARK: - AUTO SYNC (Runs & Swims)
-    func startAutoSync(dataManager: DataManager) {
-        // Run immediately once
-        syncWorkouts(into: dataManager)
+    // MARK: - NEW: FETCH STEPS
+    func fetchTodaySteps() {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return }
         
-        // Then run every 5 minutes (300 seconds)
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+        
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+            let steps = result?.sumQuantity()?.doubleValue(for: HKUnit.count()) ?? 0
+            DispatchQueue.main.async {
+                self.currentSteps = Int(steps)
+            }
+        }
+        healthStore.execute(query)
+    }
+    
+    // MARK: - AUTO SYNC (Runs & Swims & Steps)
+    func startAutoSync(dataManager: DataManager) {
+        // Run immediately
+        syncWorkouts(into: dataManager)
+        fetchTodaySteps()
+        
+        // Run every 5 minutes
         autoSyncTimer?.invalidate()
         autoSyncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            print("🔄 Auto-syncing runs and swims...")
+            print("🔄 Auto-syncing data...")
             self?.syncWorkouts(into: dataManager)
+            self?.fetchTodaySteps()
         }
     }
     
@@ -46,7 +67,7 @@ class HealthManager: ObservableObject {
         autoSyncTimer = nil
     }
 
-    // MARK: - START MONITORING
+    // MARK: - START MONITORING WORKOUT
     func startMonitoring(startTime: Date = Date()) {
         self.sessionStartDate = startTime.addingTimeInterval(-300)
         fetchLatestHeartRate()
@@ -72,7 +93,7 @@ class HealthManager: ObservableObject {
         refreshTimer = nil
     }
     
-    // MARK: - HEART RATE & CALORIE LOGIC (Standard)
+    // MARK: - HEART RATE & CALORIE LOGIC
     private func startHeartRateObserver() {
         guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
         let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, _, _ in
@@ -137,17 +158,13 @@ class HealthManager: ObservableObject {
         let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 20, sortDescriptors: [sort]) { _, samples, _ in
             guard let hkWorkouts = samples as? [HKWorkout] else { return }
             
-            // Filter for Runs and Swims
             let relevantWorkouts = hkWorkouts.filter { $0.workoutActivityType == .running || $0.workoutActivityType == .swimming }
-            
             var newSessions: [WorkoutSession] = []
             
             for hkWorkout in relevantWorkouts {
-                // Determine Type
                 var type: WorkoutType = .run
                 if hkWorkout.workoutActivityType == .swimming { type = .swim }
                 
-                // Duplicate Check
                 let exists = dataManager.workouts.contains { existing in
                     return existing.id == hkWorkout.uuid || abs(existing.date.timeIntervalSince(hkWorkout.startDate)) < 1.0
                 }
@@ -156,12 +173,12 @@ class HealthManager: ObservableObject {
                     var session = WorkoutSession(
                         id: hkWorkout.uuid,
                         date: hkWorkout.startDate,
-                        type: type, // .run or .swim
+                        type: type,
                         distance: hkWorkout.totalDistance?.doubleValue(for: .meter()),
                         duration: hkWorkout.duration,
                         activeCalories: hkWorkout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
                     )
-                    session.isCompleted = true // Imported workouts are always done
+                    session.isCompleted = true
                     newSessions.append(session)
                 }
             }

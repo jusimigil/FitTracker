@@ -1,7 +1,15 @@
 import SwiftUI
+import Foundation
+
+struct RecoveryEntry: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var date: Date
+    var score: Double
+}
 
 struct RecoveryCheckInView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var dataManager: DataManager
     @ObservedObject var recompManager = RecompManager.shared
     
     // Binds directly to the phone's storage
@@ -93,14 +101,41 @@ struct RecoveryCheckInView: View {
     }
     
     func saveCheckIn() {
-        // 1. Save Today's Date String (e.g., "10/24/2025")
-        let today = Date().formatted(date: .numeric, time: .omitted)
-        lastCheckInDate = today
+        let now = Date()
         
-        // 2. Haptic Feedback
+        let calendar = Calendar.current
+        
+        // Check whether today's recovery entry already exists.
+        if let index = dataManager.recoveryHistory.firstIndex(
+            where: {
+                calendar.isDate(
+                    $0.date,
+                    inSameDayAs: now
+                )
+            }
+        ) {
+            // Update today's existing score.
+            dataManager.recoveryHistory[index].score = recoveryScore
+        } else {
+            // Create a new daily entry.
+            let entry = RecoveryEntry(
+                date: now,
+                score: recoveryScore
+            )
+            
+            dataManager.recoveryHistory.append(entry)
+        }
+        
+        // Keep the existing daily-login system working.
+        lastCheckInDate = now.formatted(
+            date: .numeric,
+            time: .omitted
+        )
+        
+        dataManager.save()
+        
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
         
         dismiss()
-    }
-}
+    }}

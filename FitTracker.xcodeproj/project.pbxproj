@@ -27,8 +27,7 @@
 		16CD82B02F1134D9004E6992 /* Exceptions for "FitTracker" folder in "FitTracker" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Info.plist,
-				Untitled.swift,
+				Resources/Info.plist,
 			);
 			target = 16CD82652F112865004E6992 /* FitTracker */;
 		};

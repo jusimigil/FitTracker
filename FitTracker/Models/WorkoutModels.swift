@@ -8,11 +8,10 @@ enum MuscleGroup: String, Codable, CaseIterable {
     case chest = "Chest", back = "Back", legs = "Legs", shoulders = "Shoulders", arms = "Arms", core = "Core"
 }
 
-// Replace the old UserGoal enum with this specific one
 enum RecompFocus: String, Codable, CaseIterable, Identifiable {
-    case standard = "Standard Recomp"   // Balanced (The default)
-    case fatLoss = "Fat Loss Focus"     // Slight Deficit, Higher Steps
-    case muscle = "Muscle Focus"        // Maintenance Calories, Higher Volume
+    case standard = "Standard Recomp"
+    case fatLoss = "Fat Loss Focus"
+    case muscle = "Muscle Focus"
     
     var id: String { self.rawValue }
     
@@ -40,7 +39,11 @@ struct ExerciseTemplate: Codable, Hashable {
 struct WorkoutSet: Identifiable, Codable, Equatable {
     var id = UUID()
     var reps: Int
+    
+    /// Weight is ALWAYS stored in kilograms.
+    /// The UI converts this value to the user's preferred unit.
     var weight: Double
+    
     var rpe: Int
 }
 
@@ -58,6 +61,10 @@ struct WorkoutSession: Identifiable, Codable, Equatable {
     var isCompleted = false
     var notes: String = ""
     var type: WorkoutType = .strength
+    
+    // NEW: Dedicated Title Field
+    var workoutTitle: String?
+    
     var distance: Double?
     var duration: TimeInterval?
     var averageHeartRate: Double?
@@ -65,13 +72,11 @@ struct WorkoutSession: Identifiable, Codable, Equatable {
     var longitude: Double?
     var activeCalories: Double?
     
-    // Images (Using our new efficient system)
     var imageID: String?
     
-    // NEW: Music Journaling
     var workoutSongTitle: String?
     var workoutSongArtist: String?
-    var workoutSongCoverURL: String? // We store the URL string
+    var workoutSongCoverURL: String?
     
     var totalVolume: Double {
         exercises.reduce(0) { $0 + $1.sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) } }
@@ -85,7 +90,6 @@ struct BodyMetric: Identifiable, Codable, Equatable {
     var bodyFat: Double?
 }
 
-// RESTORED: This is required for your Settings Export to work
 struct BackupData: Codable {
     let workouts: [WorkoutSession]
     let bodyMetrics: [BodyMetric]
