@@ -17,6 +17,13 @@ struct TodayView: View {
     @State private var cachedOverload: String = "--"
     @State private var cachedSymmetry: String = "--"
     @State private var cachedFocus: String = "Analyzing..."
+    @State private var deloadMessage: String?
+    @State private var coachRecommendation =
+        CoachRecommendation(
+            headline: "Analyzing your training...",
+            message: "Your training data is being evaluated.",
+            focus: "Analyzing"
+        )
     
     var todaysDate: String { Date().formatted(.dateTime.weekday(.wide).month().day()) }
     
@@ -40,13 +47,65 @@ struct TodayView: View {
         }
     }
     
+    var coachView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                
+                Text("COACH")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Text(coachRecommendation.focus)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.purple)
+            }
+            
+            Text(coachRecommendation.headline)
+                .font(.title3)
+                .fontWeight(.bold)
+            
+            Text(coachRecommendation.message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(
+                    horizontal: false,
+                    vertical: true
+                )
+        }
+        .padding()
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+        .background(
+            Color(.systemBackground)
+        )
+        .clipShape(
+            RoundedRectangle(cornerRadius: 16)
+        )
+        .shadow(
+            color: .black.opacity(0.06),
+            radius: 5,
+            x: 0,
+            y: 2
+        )
+    }
+    
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 20) {
                     headerView
+                    coachView
                     trainerBriefingView
-                    todaysFocusView
+                    deloadView
                     startWorkoutButton
                     statusGridView
                     smartInsightsView
@@ -60,7 +119,15 @@ struct TodayView: View {
                 checkDailyLogin()
                 healthManager.fetchTodaySteps() // Force update steps
             }
-            .onChange(of: dataManager.workouts) { _, _ in calculateStats() }
+            .onChange(of: dataManager.workouts) { _, _ in
+                calculateStats()
+            }
+            .onChange(of: dailyRecoveryScore) { _, _ in
+                calculateStats()
+            }
+            .onChange(of: healthManager.lastNightSleepHours) { _, _ in
+                calculateStats()
+            }
             .sheet(isPresented: $showDailyCheckIn) {
                 RecoveryCheckInView()
                     .environmentObject(dataManager)
@@ -181,8 +248,10 @@ struct TodayView: View {
                     
                     Text(
                         recompManager.getFlexibleTarget(
-                            recoveryScore:
-                                Int(dailyRecoveryScore)
+                            recoveryScore: Int(dailyRecoveryScore),
+                            sleepHours: healthManager.lastNightSleepHours > 0
+                                ? healthManager.lastNightSleepHours
+                                : nil
                         )
                     )
                     .font(.subheadline)
@@ -237,97 +306,40 @@ struct TodayView: View {
         )
     }
     
-    var todaysFocusView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            
-            // MARK: Header
-            
-            HStack(spacing: 10) {
-                Image(systemName: "target")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
+    @ViewBuilder
+    var deloadView: some View {
+        if let deloadMessage {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "battery.25percent")
+                    .foregroundStyle(.orange)
+                    .font(.title3)
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TODAY'S PLAN")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Recovery Check")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.orange)
                     
-                    Text("Today's Focus")
-                        .font(.headline)
+                    Text(deloadMessage)
+                        .font(.subheadline)
+                        .fixedSize(
+                            horizontal: false,
+                            vertical: true
+                        )
                 }
                 
                 Spacer()
             }
-            
-            // MARK: Focus
-            
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "scope")
-                    .font(.title3)
-                    .foregroundStyle(.blue)
-                    .frame(width: 34, height: 34)
-                    .background(
-                        Color.blue.opacity(0.1)
-                    )
-                    .clipShape(Circle())
-                
-                Text(cachedFocus)
-                    .font(.subheadline)
-                    .fixedSize(
-                        horizontal: false,
-                        vertical: true
-                    )
-            }
-            
-            // MARK: Recommended Muscle
-            
-            if let muscle = recommendedFocusMuscle() {
-                HStack {
-                    Image(systemName: "figure.strengthtraining.traditional")
-                        .foregroundStyle(.blue)
-                    
-                    Text("Recommended focus:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(muscle.rawValue)
-                        .font(.caption)
-                        .fontWeight(.bold)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(10)
-                .background(
-                    Color.blue.opacity(0.07)
-                )
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 10
-                    )
-                )
-            }
-        }
-        .padding()
-        .background(
-            Color(.systemBackground)
-        )
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 16
+            .padding()
+            .background(
+                Color.orange.opacity(0.08)
             )
-        )
-        .shadow(
-            color: .black.opacity(0.06),
-            radius: 6,
-            x: 0,
-            y: 3
-        )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 14)
+            )
+        }
     }
+
     
     var smartInsightsView: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -606,10 +618,16 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Start Today's Workout")
                         .font(.headline)
-                    
-                    Text("Begin your recommended session")
-                        .font(.caption)
-                        .opacity(0.85)
+
+                    if let muscle = recommendedFocusMuscle() {
+                        Text("Prioritize \(muscle.rawValue)")
+                            .font(.caption)
+                            .opacity(0.85)
+                    } else {
+                        Text("Begin your recommended session")
+                            .font(.caption)
+                            .opacity(0.85)
+                    }
                 }
                 
                 Spacer()
@@ -641,10 +659,11 @@ struct TodayView: View {
     }
     func checkDailyLogin() {
         let today = Date().formatted(date: .numeric, time: .omitted)
-        if lastCheckInDate != today {
+        if true {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showDailyCheckIn = true }
         }
     }
+    
     func calculateStats() {
         cachedStatus = recompManager.analyzeStatus(
             dataManager: dataManager
@@ -658,6 +677,10 @@ struct TodayView: View {
             dataManager: dataManager
         )
         
+        deloadMessage = recompManager.deloadRecommendation(
+            dataManager: dataManager
+        )
+        
         if let latestExercise = mostRecentExercise() {
             cachedOverload = recompManager.suggestProgressiveOverload(
                 for: latestExercise,
@@ -667,12 +690,26 @@ struct TodayView: View {
             cachedOverload = "Complete a workout to receive a progression recommendation."
         }
         
-        cachedFocus = generateTodaysFocus()
+        
+        let coachContext =
+            CoachContextBuilder().build(
+                dataManager: dataManager,
+                recoveryScore: dailyRecoveryScore,
+                sleepHours: healthManager.lastNightSleepHours > 0
+                        ? healthManager.lastNightSleepHours
+                        : nil
+            )
+
+        coachRecommendation =
+            CoachManager.shared.recommendation(
+                from: coachContext
+            )
+        
+        cachedFocus = coachRecommendation.headline
     }
     
     func mostRecentExercise() -> String? {
-        let completedWorkouts = dataManager.workouts
-            .filter { $0.isCompleted }
+        let completedWorkouts = dataManager.completedWorkouts
             .sorted { $0.date > $1.date }
         
         for workout in completedWorkouts {
@@ -688,143 +725,99 @@ struct TodayView: View {
         for muscle: MuscleGroup
     ) -> Exercise? {
         
-        let completedWorkouts = dataManager.workouts
-            .filter { $0.isCompleted }
-            .sorted { $0.date > $1.date }
+        // Only use completed workouts as training history.
+        let completedWorkouts = dataManager.completedWorkouts
         
-        for workout in completedWorkouts {
-            if let exercise = workout.exercises.first(
-                where: { $0.muscleGroup == muscle }
-            ) {
-                return exercise
-            }
-        }
-        
-        return nil
-    }
-    
-    func generateTodaysFocus() -> String {
-        
-        guard !dataManager.workouts.isEmpty else {
-            return """
-            Start with a simple workout and focus on establishing your baseline.
-            Log your sets, reps, weight, and RPE so FitTracker can personalize your recommendations.
-            """
-        }
-        
-        
-        // MARK: Recovery
-        
-        if dailyRecoveryScore <= 4 {
-            return """
-            Recovery is low today (\(Int(dailyRecoveryScore))/10).
-            Consider a lighter session, reduce the weight, and prioritize good form and recovery.
-            """
-        }
-        
-        
-        // MARK: Weekly Muscle Volume
-        
-        let weeklySets = recompManager.weeklySetsByMuscle(
-            dataManager: dataManager
+        // Get exercises from the catalog that train this muscle.
+        let catalogExercises = ExerciseCatalog.exercises(
+            for: muscle
         )
         
-        let target = recompManager.weeklySetTarget
-        
-        
-        // Find the muscle furthest below its target
-        
-        let priorityMuscle = MuscleGroup.allCases.min {
-            let firstSets = weeklySets[$0] ?? 0
-            let secondSets = weeklySets[$1] ?? 0
-            
-            return firstSets < secondSets
+        guard !catalogExercises.isEmpty else {
+            return nil
         }
         
-        guard let muscle = priorityMuscle else {
-            return """
-            Your training data is still being analyzed.
-            Follow your normal training plan and use RPE to guide today's intensity.
-            """
+        // MARK: - Rank exercises by established history
+        
+        struct ExerciseUsage {
+            let definition: ExerciseDefinition
+            let sessions: Int
+            let totalSets: Int
+            let mostRecentDate: Date?
         }
         
-        
-        let completedSets = weeklySets[muscle] ?? 0
-        
-        
-        // MARK: Priority Recommendation
-        
-        if completedSets < target {
+        let usage: [ExerciseUsage] = catalogExercises.map { definition in
             
-            let remainingSets = target - completedSets
+            var sessionCount = 0
+            var totalSets = 0
+            var mostRecentDate: Date?
             
-            if let exercise = recommendedExercise(for: muscle) {
+            for workout in completedWorkouts {
                 
-                let recommendation =
-                    recompManager.suggestProgressiveOverload(
-                        for: exercise.name,
-                        dataManager: dataManager
-                    )
+                let matchingExercises = workout.exercises.filter {
+                    $0.name.caseInsensitiveCompare(
+                        definition.name
+                    ) == .orderedSame
+                }
                 
-                return """
-                🎯 Prioritize \(muscle.rawValue) today.
-                
-                You've completed \(completedSets) of \(target) weekly sets.
-                That's \(remainingSets) sets below your current target.
-                
-                Recommended:
-                \(exercise.name)
-                
-                \(recommendation)
-                """
-                
-            } else {
-                
-                return """
-                🎯 Prioritize \(muscle.rawValue) today.
-                
-                You've completed \(completedSets) of \(target) weekly sets.
-                That's \(remainingSets) sets below your current target.
-                
-                Consider adding a \(muscle.rawValue) exercise to your next workout.
-                """
-            }
-        }
-        
-        // MARK: Already On Target
-        
-        if completedSets >= target {
-            
-            if !cachedWeakLink.isEmpty &&
-                !cachedWeakLink.contains("No significant") &&
-                !cachedWeakLink.contains("Analyzing") {
-                
-                return """
-                \(muscle.rawValue) is already at your weekly target with \(completedSets) sets.
-                
-                Your current analysis suggests:
-                
-                \(cachedWeakLink)
-                
-                Consider prioritizing your lagging area instead.
-                """
+                if !matchingExercises.isEmpty {
+                    sessionCount += 1
+                    
+                    totalSets += matchingExercises.reduce(0) {
+                        $0 + $1.sets.count
+                    }
+                    
+                    if mostRecentDate == nil ||
+                        workout.date > mostRecentDate! {
+                        mostRecentDate = workout.date
+                    }
+                }
             }
             
-            return """
-            Your weekly \(muscle.rawValue) volume is on target at \(completedSets) sets.
-            
-            Recovery is \(Int(dailyRecoveryScore))/10.
-            Follow your normal training plan and focus on progressive overload.
-            """
+            return ExerciseUsage(
+                definition: definition,
+                sessions: sessionCount,
+                totalSets: totalSets,
+                mostRecentDate: mostRecentDate
+            )
         }
         
+        // Prefer the exercise you have established the most history with.
+        // Total sets breaks ties between exercises with the same session count.
+        // Recency is only a final tie-breaker.
+        let best = usage.sorted { lhs, rhs in
+            
+            if lhs.sessions != rhs.sessions {
+                return lhs.sessions > rhs.sessions
+            }
+            
+            if lhs.totalSets != rhs.totalSets {
+                return lhs.totalSets > rhs.totalSets
+            }
+            
+            switch (lhs.mostRecentDate, rhs.mostRecentDate) {
+            case let (left?, right?):
+                return left > right
+                
+            case (_?, nil):
+                return true
+                
+            case (nil, _?):
+                return false
+                
+            case (nil, nil):
+                return lhs.definition.name < rhs.definition.name
+            }
+        }.first
         
-        // MARK: Default
+        guard let definition = best?.definition else {
+            return nil
+        }
         
-        return """
-        Recovery is \(Int(dailyRecoveryScore))/10.
-        Follow your normal training plan and adjust intensity using RPE.
-        """
+        return Exercise(
+            name: definition.name,
+            muscleGroup: definition.primaryMuscle
+        )
     }
     
     func recommendedFocusMuscle() -> MuscleGroup? {

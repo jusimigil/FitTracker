@@ -8,12 +8,13 @@ import Combine
 struct SessionHeaderView: View {
     
     let session: WorkoutSession
+    let hasStarted: Bool
     @ObservedObject var healthManager = HealthManager.shared
     
     var body: some View {
         VStack(spacing: 15) {
             
-            if !session.isCompleted {
+            if !session.isCompleted && hasStarted {
                 
                 // TimelineView drives a reliable visual refresh
                 // without storing elapsed time in @State.
@@ -51,8 +52,21 @@ struct SessionHeaderView: View {
                     }
                 }
                 
+            } else if !session.isCompleted {
+                VStack(spacing: 6) {
+                    Image(systemName: "play.circle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    
+                    Text("Ready to Start")
+                        .font(.headline)
+                    
+                    Text("Log your first set to begin.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                
+
                 Text("Workout Completed")
                     .font(.headline)
                     .foregroundStyle(.green)
@@ -160,9 +174,9 @@ struct SessionDetailView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var healthManager = HealthManager.shared
     @StateObject private var locationManager = LocationManager()
+    @ObservedObject var recompManager = RecompManager.shared
     
     @State private var showExercisePicker = false
-    @State private var newExerciseName = ""
     @State private var showFinishAlert = false
     
     @State private var showCamera = false
@@ -179,6 +193,57 @@ struct SessionDetailView: View {
         dataManager.workouts.firstIndex(where: { $0.id == workoutID })
     }
     
+    var hasStartedWorkout: Bool {
+        guard let index = workoutIndex else {
+            return false
+        }
+        
+        return dataManager.workouts[index].exercises.contains {
+            !$0.sets.isEmpty
+        }
+    }
+    
+    var priorityMuscle: MuscleGroup? {
+        let weeklySets = recompManager.weeklySetsByMuscle(
+            dataManager: dataManager
+        )
+
+        let target = recompManager.weeklySetTarget
+
+        let selectedMuscle = MuscleGroup.allCases.min { lhs, rhs in
+            let lhsSets = weeklySets[lhs] ?? 0
+            let rhsSets = weeklySets[rhs] ?? 0
+
+            let lhsDeficit = max(target - lhsSets, 0)
+            let rhsDeficit = max(target - rhsSets, 0)
+
+            if lhsDeficit != rhsDeficit {
+                return lhsDeficit > rhsDeficit
+            }
+
+            // Tie-breaker: prioritize lower-body training.
+            if lhs == .legs && rhs != .legs {
+                return true
+            }
+
+            if rhs == .legs && lhs != .legs {
+                return false
+            }
+
+            return lhs.rawValue < rhs.rawValue
+        }
+
+        guard let selectedMuscle = selectedMuscle else {
+            return nil
+        }
+
+        guard (weeklySets[selectedMuscle] ?? 0) < target else {
+            return nil
+        }
+
+        return selectedMuscle
+    }
+    
     // Display Logic Helper
     func displayTitle(for session: WorkoutSession) -> String {
         if let title = session.workoutTitle, !title.isEmpty { return title }
@@ -191,7 +256,10 @@ struct SessionDetailView: View {
             let session = dataManager.workouts[index]
             
             VStack(spacing: 0) {
-                SessionHeaderView(session: session)
+                SessionHeaderView(
+                    session: session,
+                    hasStarted: hasStartedWorkout
+                )
                 
                 List {
                     // MARK: MUSIC JOURNAL
@@ -236,22 +304,42 @@ struct SessionDetailView: View {
                     }
                     
                     ForEach($dataManager.workouts[index].exercises) { $ex in
-                        NavigationLink(destination: ExerciseDetailView(exercise: $ex, readOnly: session.isCompleted, workoutID: workoutID)) {
-                            HStack {
-                                Text(ex.name).font(.headline)
+                        NavigationLink(
+                            destination: ExerciseDetailView(
+                                exercise: $ex,
+                                readOnly: session.isCompleted,
+                                workoutID: workoutID
+                            )
+                        ) {
+                            HStack(spacing: 8) {
+                                
+                                if ex.resolvedMuscleGroup == priorityMuscle {
+                                    Image(systemName: "target")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                                
+                                Text(ex.name)
+                                    .font(.headline)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                
                                 Spacer()
-                                Text("\(ex.sets.count) sets").foregroundStyle(.secondary)
+                                
+                                Text("\(ex.sets.count) sets")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
+                            .padding(.vertical, 3)
                         }
-                    }
-                    .onDelete { offsets in
+                    }                    .onDelete { offsets in
                         if !session.isCompleted {
                             dataManager.workouts[index].exercises.remove(atOffsets: offsets)
                             dataManager.save()
                         }
                     }
                     
-                    if !session.isCompleted {
+                    if !session.isCompleted && hasStartedWorkout{
                         Section {
                             Button("Finish Workout", role: .destructive) {
                                 showFinishAlert = true
@@ -270,18 +358,28 @@ struct SessionDetailView: View {
                 }
             }
             .onAppear {
-                if !session.isCompleted {
-                    healthManager.startMonitoring(startTime: session.date)
+                if !session.isCompleted && hasStartedWorkout {
+                    healthManager.startMonitoring(
+                        startTime: session.date
+                    )
                     requestNotificationPermissions()
                     resetInactivityTimer()
                 }
             }
             .onChange(of: dataManager.workouts) { _, _ in
-                if !session.isCompleted {
+                guard !session.isCompleted else {
+                    return
+                }
+                
+                if hasStartedWorkout {
+                    healthManager.startMonitoring(
+                        startTime: session.date
+                    )
+                    
+                    requestNotificationPermissions()
                     resetInactivityTimer()
                 }
-            }
-            .alert("Finish Workout?", isPresented: $showFinishAlert) {
+            } .alert("Finish Workout?", isPresented: $showFinishAlert) {
                 Button("Finish", role: .destructive) { finishWorkout(index: index) }
                 Button("Cancel", role: .cancel) { }
             } message: {
@@ -299,9 +397,7 @@ struct SessionDetailView: View {
             .sheet(
                 isPresented: $showWorkoutSummary,
                 onDismiss: {
-                    // The workout is already complete.
-                    // Once the summary is dismissed, leave
-                    // the completed SessionDetailView as well.
+                    
                     dismiss()
                 }
             ) {
@@ -318,17 +414,18 @@ struct SessionDetailView: View {
                     dataManager.workouts[index].imageID = fileName
                     dataManager.save()
                 }
-            }
-            .alert("Add Exercise", isPresented: $showExercisePicker) {
-                TextField("Name", text: $newExerciseName)
-                Button("Add") {
-                    if !newExerciseName.isEmpty {
-                        dataManager.workouts[index].exercises.append(Exercise(name: newExerciseName))
-                        dataManager.save()
-                        newExerciseName = ""
-                    }
+            } .sheet(isPresented: $showExercisePicker) {
+                ExercisePickerView { definition in
+                    
+                    dataManager.workouts[index].exercises.append(
+                        Exercise(
+                            name: definition.name,
+                            muscleGroup: definition.primaryMuscle
+                        )
+                    )
+                    
+                    dataManager.save()
                 }
-                Button("Cancel", role: .cancel) { }
             }
         } else {
             Text("Workout not found")
@@ -399,6 +496,10 @@ struct SessionDetailView: View {
             // Save everything before showing the summary.
             dataManager.save()
             healthManager.stopMonitoring()
+            
+            LiveActivityManager.shared.endWorkout()
+            
+            dismiss()
 
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)

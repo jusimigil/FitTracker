@@ -32,38 +32,41 @@ struct HistoryView: View {
     // MARK: - Basic Statistics
     
     var lifetimeVolume: Double {
-        dataManager.workouts.reduce(0) {
+        dataManager.completedWorkouts.reduce(0) {
             $0 + $1.totalVolume
         }
     }
-    
     var completedWorkouts: [WorkoutSession] {
-        dataManager.workouts.filter {
-            $0.isCompleted
-        }
+        dataManager.completedWorkouts
     }
     
     var filteredWorkouts: [WorkoutSession] {
-        let sortedList = dataManager.workouts.sorted {
-            $0.date > $1.date
-        }
-        
+        let sortedList = dataManager.workouts
+            .filter { session in
+                session.isCompleted ||
+                session.exercises.contains {
+                    !$0.sets.isEmpty
+                }
+            }
+            .sorted {
+                $0.date > $1.date
+            }
+
         switch selectedFilter {
         case .all:
             return sortedList
-            
+
         case .strength:
             return sortedList.filter {
                 $0.type == .strength
             }
-            
+
         case .cardio:
             return sortedList.filter {
                 $0.type != .strength
             }
         }
     }
-    
     // MARK: - Training Consistency
     
     var currentStreak: Int {
@@ -579,12 +582,10 @@ struct HistoryView: View {
         return session.type.rawValue.capitalized
     }
     
-    func prs(
-        for session: WorkoutSession
-    ) -> [PersonalRecord] {
-        
+    func prs(for session: WorkoutSession) -> [PersonalRecord] {
         dataManager.personalRecords.filter {
-            $0.workoutID == session.id
+            $0.workoutID == session.id &&
+            $0.type != .estimatedOneRepMax
         }
     }
     
@@ -625,19 +626,13 @@ struct HistoryView: View {
     }
     
     func getThrowbackWorkout() -> WorkoutSession? {
-        
-        dataManager.workouts
+        dataManager.completedWorkouts
             .filter {
-                $0.isCompleted &&
                 !$0.notes.isEmpty
             }
             .randomElement()
         ??
-        dataManager.workouts
-            .filter {
-                $0.isCompleted
-            }
-            .randomElement()
+        dataManager.completedWorkouts.randomElement()
     }
     
     @ViewBuilder

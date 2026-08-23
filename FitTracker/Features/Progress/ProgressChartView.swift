@@ -2,11 +2,13 @@ import SwiftUI
 import Charts
 
 struct ProgressChartView: View {
+    @EnvironmentObject var dataManager: DataManager
+    
     let workouts: [WorkoutSession]
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Volume Progress")
+            Text("Volume Progress (\(dataManager.weightUnit.rawValue))")
                 .font(.headline)
                 .padding(.bottom, 5)
             
@@ -31,7 +33,12 @@ struct ProgressChartView: View {
                         // The Line
                         LineMark(
                             x: .value("Date", session.date),
-                            y: .value("Volume", session.totalVolume)
+                            y: .value(
+                                "Volume",
+                                dataManager.displayedWeight(
+                                    fromKilograms: session.totalVolume
+                                )
+                            )
                         )
                         .interpolationMethod(.catmullRom) // Makes it smooth/curvy
                         .symbol(by: .value("Date", session.date))
@@ -40,9 +47,13 @@ struct ProgressChartView: View {
                         // The Shaded Area Underneath
                         AreaMark(
                             x: .value("Date", session.date),
-                            y: .value("Volume", session.totalVolume)
-                        )
-                        .foregroundStyle(
+                            y: .value(
+                                "Volume",
+                                dataManager.displayedWeight(
+                                    fromKilograms: session.totalVolume
+                                )
+                            )
+                        )                        .foregroundStyle(
                             LinearGradient(
                                 colors: [.blue.opacity(0.3), .blue.opacity(0.0)],
                                 startPoint: .top,

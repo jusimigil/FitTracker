@@ -87,39 +87,26 @@ final class PRManager {
         exercise: Exercise,
         newSet: WorkoutSet,
         workouts: [WorkoutSession],
-        workoutID: UUID,
-        excludingWorkoutID: UUID? = nil
+        workoutID: UUID
     ) -> [PersonalRecord] {
         
         var records: [PersonalRecord] = []
         
-        let oldSets = previousSets(
+        let historicalSets = previousSets(
             for: exercise.name,
-            in: workouts,
-            excludingWorkoutID: excludingWorkoutID
+            in: workouts
         )
+
+        // Include sets already logged during THIS exercise session.
+        // The new set has not been appended yet.
+        let oldSets = historicalSets + exercise.sets
         
-        
-        // MARK: Previous Bests
+        // MARK: 1. Heaviest Weight
         
         let previousHeaviest =
             oldSets.map(\.weight).max() ?? 0
         
-        let previousBest1RM =
-            oldSets
-                .map {
-                    estimatedOneRepMax(
-                        weight: $0.weight,
-                        reps: $0.reps
-                    )
-                }
-                .max() ?? 0
-        
-        
-        // MARK: 1. Heaviest Weight
-        
         if newSet.weight > previousHeaviest {
-            
             records.append(
                 PersonalRecord(
                     exerciseName: exercise.name,
@@ -136,7 +123,6 @@ final class PRManager {
             )
         }
         
-        
         // MARK: 2. Rep Record
         
         let sameWeightSets = oldSets.filter {
@@ -144,23 +130,9 @@ final class PRManager {
         }
         
         let previousBestReps =
-            sameWeightSets
-                .map(\.reps)
-                .max() ?? 0
+            sameWeightSets.map(\.reps).max() ?? 0
         
-        /*
-         A lower weight should not create a PR.
-         
-         Therefore, a Rep Record must also be
-         performed at at least the previous
-         heaviest weight.
-        */
-        let qualifiesForRepRecord =
-            newSet.weight >= previousHeaviest &&
-            newSet.reps > previousBestReps
-        
-        if qualifiesForRepRecord {
-            
+        if newSet.reps > previousBestReps {
             records.append(
                 PersonalRecord(
                     exerciseName: exercise.name,
@@ -177,33 +149,8 @@ final class PRManager {
             )
         }
         
-        
-        // MARK: 3. Estimated 1RM
-        
-        let new1RM = estimatedOneRepMax(
-            weight: newSet.weight,
-            reps: newSet.reps
-        )
-        
-        if new1RM > previousBest1RM {
-            
-            records.append(
-                PersonalRecord(
-                    exerciseName: exercise.name,
-                    type: .estimatedOneRepMax,
-                    weight: newSet.weight,
-                    reps: newSet.reps,
-                    estimatedOneRepMax: new1RM,
-                    date: Date(),
-                    workoutID: workoutID
-                )
-            )
-        }
-        
         return records
     }
-    
-    // MARK: - Recalculate Exercise PRs
 
     // MARK: - Recalculate Exercise PRs
 

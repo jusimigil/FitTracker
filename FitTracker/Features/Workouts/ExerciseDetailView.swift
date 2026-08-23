@@ -1,6 +1,7 @@
 import SwiftUI
 import UserNotifications
 import Combine
+import Charts
 
 struct ExerciseDetailView: View {
     @Binding var exercise: Exercise
@@ -10,6 +11,11 @@ struct ExerciseDetailView: View {
     
     @EnvironmentObject var dataManager: DataManager
     @ObservedObject var recompManager = RecompManager.shared
+    @ObservedObject var healthManager = HealthManager.shared
+
+    @AppStorage("dailyRecoveryScore")
+    private var dailyRecoveryScore: Double = 8.0
+    
     
     @State private var reps = 10
     @State private var weight = 0.0
@@ -41,9 +47,33 @@ struct ExerciseDetailView: View {
     var unitLabel: String { isMetric ? "kg" : "lbs" }
     var maxWeight: Double { isMetric ? 300 : 600 }
     
+    // MARK: - Recovery Programming
+
+    enum RecoveryProgrammingLevel {
+        case normal
+        case conservative
+        case recovery
+    }
+
+    private var recoveryProgrammingLevel: RecoveryProgrammingLevel {
+        if dailyRecoveryScore < 4 {
+            return .recovery
+        }
+        
+        if dailyRecoveryScore < 7 {
+            return .conservative
+        }
+        
+        if healthManager.lastNightSleepHours > 0 &&
+            healthManager.lastNightSleepHours < 6 {
+            return .conservative
+        }
+        
+        return .normal
+    }
+    
     var personalBestSets: [WorkoutSet] {
-        dataManager.workouts
-            .filter { $0.isCompleted }
+        dataManager.completedWorkouts
             .flatMap { workout in
                 workout.exercises
                     .filter {
@@ -54,7 +84,6 @@ struct ExerciseDetailView: View {
                     }
             }
     }
-    
     var heaviestSet: WorkoutSet? {
         personalBestSets.max {
             $0.weight < $1.weight
@@ -84,29 +113,134 @@ struct ExerciseDetailView: View {
         }
     }
     
+    // MARK: - Exercise Progression
+
+    struct ProgressionPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let estimated1RM: Double
+    }
+
+    var progressionHistory: [ProgressionPoint] {
+        let history = dataManager.completedWorkouts
+            .compactMap { workout -> ProgressionPoint? in
+                
+                guard let matchingExercise = workout.exercises.first(
+                    where: {
+                        $0.name.caseInsensitiveCompare(
+                            exercise.name
+                        ) == .orderedSame
+                    }
+                ) else {
+                    return nil
+                }
+                
+                guard let bestSet = matchingExercise.sets.max(
+                    by: {
+                        PRManager.shared.estimatedOneRepMax(
+                            weight: $0.weight,
+                            reps: $0.reps
+                        )
+                        <
+                        PRManager.shared.estimatedOneRepMax(
+                            weight: $1.weight,
+                            reps: $1.reps
+                        )
+                    }
+                ) else {
+                    return nil
+                }
+                
+                let estimated1RM =
+                    PRManager.shared.estimatedOneRepMax(
+                        weight: bestSet.weight,
+                        reps: bestSet.reps
+                    )
+                
+                return ProgressionPoint(
+                    date: workout.date,
+                    estimated1RM: estimated1RM
+                )
+            }
+            .sorted { $0.date < $1.date }
+        
+        // Keep the view compact.
+        return Array(history.suffix(8))
+    }
+
+    var progressionTrend: String {
+        guard progressionHistory.count >= 2,
+              let first = progressionHistory.first,
+              let last = progressionHistory.last
+        else {
+            return "Not enough data"
+        }
+        
+        let difference =
+            last.estimated1RM - first.estimated1RM
+        
+        if difference > 0 {
+            return "Improving"
+        }
+        
+        if difference < 0 {
+            return "Declining"
+        }
+        
+        return "Stable"
+    }
+
+    var progressionTrendIcon: String {
+        switch progressionTrend {
+        case "Improving":
+            return "arrow.up.right"
+        case "Declining":
+            return "arrow.down.right"
+        default:
+            return "arrow.right"
+        }
+    }
+
+    var progressionTrendColor: Color {
+        switch progressionTrend {
+        case "Improving":
+            return .green
+        case "Declining":
+            return .red
+        default:
+            return .secondary
+        }
+    }
+    
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 25) {
                     
                     // MARK: - 0. MUSCLE SELECTOR
-                    if !readOnly || exercise.sets.isEmpty {
+                    if let muscle = ExerciseCatalog.muscle(
+                        for: exercise.name
+                    ) {
                         HStack {
-                            Text("Target Muscle:")
-                                .font(.caption).bold().foregroundStyle(.secondary)
+                            Text("Primary Muscle")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.secondary)
+                            
                             Spacer()
-                            Picker("Muscle", selection: $exercise.muscleGroup) {
-                                ForEach(MuscleGroup.allCases, id: \.self) { muscle in
-                                    Text(muscle.rawValue).tag(muscle)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .disabled(readOnly)
-                            .tint(.blue)
+                            
+                            Text(muscle.rawValue)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.blue)
                         }
                         .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
+                        .background(
+                            Color(.secondarySystemBackground)
+                        )
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: 12)
+                        )
                     }
                     
                     // MARK: - PERSONAL BEST
@@ -246,24 +380,97 @@ struct ExerciseDetailView: View {
                         .cornerRadius(12)
                     }
                     
-                    // MARK: - 1. SMART INSIGHT (Unit Aware)
-                    if !readOnly {
-                        HStack(alignment: .top) {
-                            Image(systemName: "wand.and.stars")
-                                .foregroundStyle(.purple)
-                                .font(.title2)
+                    // MARK: - PROGRESSION
+
+                    if progressionHistory.count >= 2 {
+                        VStack(alignment: .leading, spacing: 12) {
                             
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Smart Recommendation")
-                                    .font(.caption).bold().foregroundStyle(.purple)
-                                Text(recompManager.suggestProgressiveOverload(for: exercise.name, dataManager: dataManager))
-                                    .font(.subheadline)
-                                    .fixedSize(horizontal: false, vertical: true)
+                            HStack {
+                                Image(systemName: "chart.line.uptrend.xyaxis")
+                                    .foregroundStyle(progressionTrendColor)
+                                
+                                Text("Progression")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                HStack(spacing: 4) {
+                                    Image(systemName: progressionTrendIcon)
+                                    Text(progressionTrend)
+                                }
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(progressionTrendColor)
                             }
-                            Spacer()
+                            
+                            Chart(progressionHistory) { point in
+                                LineMark(
+                                    x: .value("Date", point.date),
+                                    y: .value("1RM", dataManager.displayedWeight(
+                                        fromKilograms: point.estimated1RM
+                                    ))
+                                )
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(.blue)
+                                
+                                PointMark(
+                                    x: .value("Date", point.date),
+                                    y: .value("1RM", dataManager.displayedWeight(
+                                        fromKilograms: point.estimated1RM
+                                    ))
+                                )
+                                .foregroundStyle(.blue)
+                            }
+                            .chartXAxis {
+                                AxisMarks(values: .automatic(desiredCount: 4)) {
+                                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                }
+                            }
+                            .chartYAxis {
+                                AxisMarks(position: .leading)
+                            }
+                            .frame(height: 150)
+                            
+                            if let first = progressionHistory.first,
+                               let last = progressionHistory.last {
+                                
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Previous")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text(
+                                            dataManager.formatWeight(
+                                                first.estimated1RM,
+                                                decimals: 0
+                                            )
+                                        )
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("Current")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text(
+                                            dataManager.formatWeight(
+                                                last.estimated1RM,
+                                                decimals: 0
+                                            )
+                                        )
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    }
+                                }
+                            }
                         }
                         .padding()
-                        .background(Color.purple.opacity(0.1))
+                        .background(Color(.secondarySystemBackground))
                         .cornerRadius(12)
                     }
                     
@@ -274,14 +481,37 @@ struct ExerciseDetailView: View {
                                 HStack {
                                     Text("Weight").fontWeight(.medium)
                                     Spacer()
-                                    Text("\(Int(weight)) \(unitLabel)").bold().foregroundStyle(.blue)
+                                    Text(formatWeightValue(weight) + " " + unitLabel).bold().foregroundStyle(.blue)
                                 }
-                                Slider(value: $weight, in: 0...maxWeight, step: isMetric ? 2.5 : 5)
+                                Slider(value: $weight, in: 0...maxWeight, step: isMetric ? 0.5 : 1)
                             }
                             Divider()
-                            VStack(alignment: .leading) {
-                                HStack { Text("RPE").fontWeight(.medium); Spacer(); Text("\(Int(rpe)) / 10").bold().foregroundStyle(rpeColor(rpe: rpe)) }
-                                Slider(value: $rpe, in: 1...10, step: 1)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("RPE")
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(Int(rpe)) / 10")
+                                        .bold()
+                                        .foregroundStyle(
+                                            rpeColor(rpe: rpe)
+                                        )
+                                }
+                                
+                                Slider(
+                                    value: $rpe,
+                                    in: 1...10,
+                                    step: 1
+                                )
+                                
+                                Text(rpeDescription(rpe: rpe))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .animation(
+                                        .easeInOut(duration: 0.15),
+                                        value: rpe
+                                    )
                             }
                             Divider()
                             HStack { Text("Reps").fontWeight(.medium); Spacer(); Stepper("\(reps)", value: $reps, in: 1...100).fixedSize() }
@@ -462,6 +692,14 @@ struct ExerciseDetailView: View {
             
             previousSets = loadedPreviousSets
             
+            if !exercise.sets.isEmpty && !readOnly {
+                if let lastSet = exercise.sets.last {
+                    nextSetRecommendation = generateNextSetRecommendation(
+                        set: lastSet
+                    )
+                }
+            }
+            
             if !readOnly {
                 generateNextWorkoutGoal(
                     from: loadedPreviousSets
@@ -542,9 +780,8 @@ struct ExerciseDetailView: View {
         
         let currentWorkoutID = findCurrentWorkoutID()
         
-        let previousExercises = dataManager.workouts
+        let previousExercises = dataManager.completedWorkouts
             .filter {
-                $0.isCompleted &&
                 $0.id != currentWorkoutID
             }
             .sorted {
@@ -572,37 +809,68 @@ struct ExerciseDetailView: View {
         }?.id
     }
     
-    func generateNextSetRecommendation(set: WorkoutSet) -> String {
+    func generateNextSetRecommendation(
+        set: WorkoutSet
+    ) -> String {
         
         let currentWeight = dataManager.displayedWeight(
             fromKilograms: set.weight
         )
         
-        let currentRPE = set.rpe
+        let currentRPE = Double(set.rpe)
         let currentReps = set.reps
+        let recoveryLevel = recoveryProgrammingLevel
         
         let sessionSets = currentSessionSets
         
-        // Average RPE across the current exercise.
         let averageRPE: Double
         
         if sessionSets.isEmpty {
-            averageRPE = Double(currentRPE)
+            averageRPE = currentRPE
         } else {
             averageRPE = sessionSets
                 .map { Double($0.rpe) }
-                .reduce(0, +) / Double(sessionSets.count)
+                .reduce(0, +)
+                / Double(sessionSets.count)
         }
         
-        // Reset recommendation.
-        recommendedWeight = currentWeight
-        recommendedReps = currentReps
-        recommendedRPE = 8
+        // MARK: - Recovery Adjustment
+
+        if recoveryLevel == .recovery {
+            let recoveryWeight = max(
+                0,
+                currentWeight - (isMetric ? 2.5 : 5.0)
+            )
+            
+            recommendedWeight = recoveryWeight
+            recommendedReps = currentReps
+            recommendedRPE = 7
+            
+            return """
+            Recovery is low today.
+            Keep the next set controlled at \(formatWeightValue(recoveryWeight)) \(unitLabel) and avoid pushing to failure.
+            """
+        }
+
+        if recoveryLevel == .conservative {
+            
+            // Recovery limits progression but does not stop training.
+            recommendedWeight = currentWeight
+            recommendedReps = currentReps
+            recommendedRPE = 7
+            
+            return """
+            Recovery suggests a conservative session today.
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) and focus on consistent reps.
+            """
+        }
+        
+        let increase = isMetric ? 2.5 : 5.0
+        let decrease = isMetric ? 2.5 : 5.0
         
         // MARK: - Very Easy
         
-        if averageRPE <= 6 {
-            let increase = isMetric ? 2.5 : 5.0
+        if averageRPE <= 6.5 {
             let nextWeight = currentWeight + increase
             
             recommendedWeight = nextWeight
@@ -610,48 +878,65 @@ struct ExerciseDetailView: View {
             recommendedRPE = 8
             
             return """
-            Your sets are moving well at an average RPE of \(String(format: "%.1f", averageRPE)).
+            Your sets are moving easily at an average RPE of \(String(format: "%.1f", averageRPE)).
             Increase to \(formatWeightValue(nextWeight)) \(unitLabel) for the next set.
             """
         }
         
-        // MARK: - Optimal
+        // MARK: - Easy / Productive
         
-        if averageRPE <= 8 {
-            recommendedWeight = currentWeight
+        if averageRPE <= 7.5 {
+            let nextWeight = currentWeight + increase
+            
+            recommendedWeight = nextWeight
             recommendedReps = currentReps
             recommendedRPE = 8
             
             return """
-            You're in the optimal training range at an average RPE of \(String(format: "%.1f", averageRPE)).
-            Keep \(formatWeightValue(currentWeight)) \(unitLabel) and try to match or beat \(currentReps) reps.
+            Strong set at an average RPE of \(String(format: "%.1f", averageRPE)).
+            Try \(formatWeightValue(nextWeight)) \(unitLabel) for the next set.
+            """
+        }
+        
+        // MARK: - Productive
+        
+        if averageRPE <= 8.5 {
+            recommendedWeight = currentWeight
+            recommendedReps = min(currentReps + 1, 15)
+            recommendedRPE = 8
+            
+            return """
+            You're in a productive range at an average RPE of \(String(format: "%.1f", averageRPE)).
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) and aim for \(currentReps + 1) reps.
             """
         }
         
         // MARK: - Hard
         
-        if averageRPE < 10 {
+        if averageRPE < 9.5 {
             recommendedWeight = currentWeight
-            recommendedReps = max(1, currentReps - 1)
+            recommendedReps = currentReps
             recommendedRPE = 8
             
             return """
             This exercise is getting challenging at an average RPE of \(String(format: "%.1f", averageRPE)).
-            Keep \(formatWeightValue(currentWeight)) \(unitLabel) and aim for \(max(1, currentReps - 1)) reps.
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) and match your performance.
             """
         }
         
-        // MARK: - Maximum Effort
+        // MARK: - Very Hard / Maximum Effort
         
-        let decrease = isMetric ? 2.5 : 5.0
-        let nextWeight = max(0, currentWeight - decrease)
+        let nextWeight = max(
+            0,
+            currentWeight - decrease
+        )
         
         recommendedWeight = nextWeight
         recommendedReps = currentReps
         recommendedRPE = 8
         
         return """
-        You're at maximum effort with an average RPE of 10.
+        High fatigue detected at an average RPE of \(String(format: "%.1f", averageRPE)).
         Reduce to \(formatWeightValue(nextWeight)) \(unitLabel) for the next set.
         """
     }
@@ -665,12 +950,25 @@ struct ExerciseDetailView: View {
             return
         }
         
+        let recoveryLevel = recoveryProgrammingLevel
+        
         let averageRPE = sets
             .map { Double($0.rpe) }
             .reduce(0, +) / Double(sets.count)
         
+        // Use the best-performing set as the basis for progression.
         let bestSet = sets.max {
-            $0.weight < $1.weight
+            let lhs1RM = PRManager.shared.estimatedOneRepMax(
+                weight: $0.weight,
+                reps: $0.reps
+            )
+            
+            let rhs1RM = PRManager.shared.estimatedOneRepMax(
+                weight: $1.weight,
+                reps: $1.reps
+            )
+            
+            return lhs1RM < rhs1RM
         }
         
         guard let bestSet else {
@@ -683,65 +981,156 @@ struct ExerciseDetailView: View {
         
         let currentReps = bestSet.reps
         
-        // MARK: - Easy Session
+        // MARK: - Recovery Adjustment
+
+        if recoveryLevel == .recovery {
+            let recoveryWeight = max(
+                0,
+                currentWeight - (isMetric ? 2.5 : 5.0)
+            )
+            
+            nextWorkoutWeight = recoveryWeight
+            nextWorkoutReps = currentReps
+            
+            nextWorkoutGoal = """
+            Recovery is low today.
+            Do not increase load next workout. Rebuild with about \(formatWeightValue(recoveryWeight)) \(unitLabel) and focus on consistent, high-quality reps.
+            """
+            
+            return
+        }
+
+        if recoveryLevel == .conservative {
+            nextWorkoutWeight = currentWeight
+            nextWorkoutReps = currentReps
+            
+            nextWorkoutGoal = """
+            Recovery suggests a conservative progression.
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout and aim to match your current performance before increasing weight.
+            """
+            
+            return
+        }
         
-        if averageRPE <= 7 {
+        let minimumUsefulReps = 6
+        
+        // MARK: - Very Easy
+        
+        if averageRPE <= 6.5 {
+            
+            // If the user stopped very early, build reps first.
+            if currentReps < minimumUsefulReps {
+                
+                nextWorkoutWeight = currentWeight
+                nextWorkoutReps = min(
+                    currentReps + 2,
+                    12
+                )
+                
+                nextWorkoutGoal = """
+                Your average RPE was \(String(format: "%.1f", averageRPE)), \
+                but you only reached \(currentReps) reps.
+                
+                Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout \
+                and build toward \(minimumUsefulReps)–12 reps before increasing weight.
+                """
+                
+                return
+            }
             
             let increase = isMetric ? 2.5 : 5.0
             let nextWeight = currentWeight + increase
             
             nextWorkoutWeight = nextWeight
-            nextWorkoutReps = max(1, currentReps - 2)
+            nextWorkoutReps = currentReps
             
             nextWorkoutGoal = """
-            Progression ready. Your average RPE was \(String(format: "%.1f", averageRPE)).
-            Next workout, try \(formatWeightValue(nextWeight)) \(unitLabel) for \(max(1, currentReps - 2))–\(currentReps) reps.
+            Progression ready. Your average RPE was \
+            \(String(format: "%.1f", averageRPE)).
+            
+            Next workout, try \(formatWeightValue(nextWeight)) \(unitLabel) \
+            for \(currentReps) reps.
             """
             
             return
         }
         
-        // MARK: - Productive Session
+        // MARK: - Good / Productive
         
-        if averageRPE <= 8 {
+        if averageRPE <= 7.5 {
+            
+            let increase = isMetric ? 2.5 : 5.0
+            let nextWeight = currentWeight + increase
+            
+            nextWorkoutWeight = nextWeight
+            nextWorkoutReps = currentReps
+            
+            nextWorkoutGoal = """
+            Good performance at an average RPE of \
+            \(String(format: "%.1f", averageRPE)).
+            
+            Next workout, try \(formatWeightValue(nextWeight)) \(unitLabel) \
+            for \(currentReps) reps.
+            """
+            
+            return
+        }
+        
+        // MARK: - Productive
+        
+        if averageRPE <= 8.5 {
             
             nextWorkoutWeight = currentWeight
-            nextWorkoutReps = currentReps + 1
+            nextWorkoutReps = min(
+                currentReps + 1,
+                15
+            )
             
             nextWorkoutGoal = """
-            Solid session at an average RPE of \(String(format: "%.1f", averageRPE)).
-            Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout and aim for \(currentReps + 1) reps.
+            Solid session at an average RPE of \
+            \(String(format: "%.1f", averageRPE)).
+            
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout \
+            and aim for \(currentReps + 1) reps.
             """
             
             return
         }
         
-        // MARK: - Hard Session
+        // MARK: - Hard
         
-        if averageRPE < 10 {
+        if averageRPE < 9.5 {
             
             nextWorkoutWeight = currentWeight
             nextWorkoutReps = currentReps
             
             nextWorkoutGoal = """
-            Challenging session at an average RPE of \(String(format: "%.1f", averageRPE)).
-            Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout and focus on matching your performance.
+            Challenging session at an average RPE of \
+            \(String(format: "%.1f", averageRPE)).
+            
+            Keep \(formatWeightValue(currentWeight)) \(unitLabel) next workout \
+            and focus on matching your performance.
             """
             
             return
         }
         
-        // MARK: - Max Effort
+        // MARK: - Maximum Effort
         
         let decrease = isMetric ? 2.5 : 5.0
-        let nextWeight = max(0, currentWeight - decrease)
+        let nextWeight = max(
+            0,
+            currentWeight - decrease
+        )
         
         nextWorkoutWeight = nextWeight
         nextWorkoutReps = currentReps
         
         nextWorkoutGoal = """
         Maximum effort detected.
-        Reduce to \(formatWeightValue(nextWeight)) \(unitLabel) next workout and rebuild from there.
+        
+        Reduce to \(formatWeightValue(nextWeight)) \(unitLabel) \
+        next workout and rebuild from there.
         """
     }
     
@@ -776,12 +1165,33 @@ struct ExerciseDetailView: View {
         timeRemaining = seconds
         timerActive = true
         internalTimer?.invalidate()
-        internalTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+
+        // Start the Live Activity rest countdown.
+        let restEndTime = Date().addingTimeInterval(
+            Double(seconds)
+        )
+
+        LiveActivityManager.shared.startRest(
+            until: restEndTime,
+            currentExercise: exercise.name,
+            currentSet: exercise.sets.count,
+            totalSets: exercise.sets.count
+        )
+
+        internalTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0,
+            repeats: true
+        ) { _ in
             if timeRemaining > 0 {
-                withAnimation(.linear(duration: 1.0)) { timeRemaining -= 1 }
+                withAnimation(.linear(duration: 1.0)) {
+                    timeRemaining -= 1
+                }
             } else {
                 cancelTimer()
-                let generator = UINotificationFeedbackGenerator()
+
+                let generator =
+                    UINotificationFeedbackGenerator()
+
                 generator.notificationOccurred(.success)
             }
         }
@@ -790,8 +1200,13 @@ struct ExerciseDetailView: View {
     func cancelTimer() {
         timerActive = false
         internalTimer?.invalidate()
+
+        LiveActivityManager.shared.endRest(
+            currentExercise: exercise.name,
+            currentSet: exercise.sets.count,
+            totalSets: exercise.sets.count
+        )
     }
-    
     func recalculateEditedExercisePRs() {
         let records = PRManager.shared.recalculatePRs(
             exercise: exercise,
@@ -847,17 +1262,88 @@ struct ExerciseDetailView: View {
 
         // Save the updated workout.
         dataManager.save()
+        
+
 
         nextSetRecommendation = generateNextSetRecommendation(
             set: newSet
         )
+        
+        let workoutSession = dataManager.workouts.first {
+            $0.id == workoutID
+        }
+
+        if let workoutSession {
+            let workoutName: String
+
+            if let title = workoutSession.workoutTitle,
+               !title.isEmpty {
+                workoutName = title
+            } else if !workoutSession.notes.isEmpty,
+                      workoutSession.notes.count < 30 {
+                workoutName = workoutSession.notes
+            } else {
+                workoutName =
+                    workoutSession.type.rawValue.capitalized
+            }
+
+            let totalWorkoutSets =
+                workoutSession.exercises
+                    .flatMap(\.sets)
+                    .count
+
+            if totalWorkoutSets == 1 {
+                LiveActivityManager.shared.startWorkout(
+                    workoutName: workoutName,
+                    startedAt: workoutSession.date,
+                    currentExercise: exercise.name,
+                    currentSet: exercise.sets.count,
+                    totalSets: totalWorkoutSets
+                )
+            } else {
+                LiveActivityManager.shared.updateWorkout(
+                    currentExercise: exercise.name,
+                    currentSet: exercise.sets.count,
+                    totalSets: totalWorkoutSets
+                )
+            }
+        }
 
         return newSet.id
+
     }
     
     func rpeColor(rpe: Double) -> Color {
         switch rpe {
         case 1...4: return .green; case 5...7: return .orange; default: return .red
+        }
+    }
+    
+    func rpeDescription(rpe: Double) -> String {
+        switch Int(rpe) {
+        case 1...4:
+            return "Very easy — you could do 6+ more reps"
+            
+        case 5:
+            return "Easy — you could do about 5 more reps"
+            
+        case 6:
+            return "Moderate — you could do about 4 more reps"
+            
+        case 7:
+            return "Challenging — you could do about 3 more reps"
+            
+        case 8:
+            return "Hard — you could do about 2 more reps"
+            
+        case 9:
+            return "Very hard — you could do about 1 more rep"
+            
+        case 10:
+            return "Maximum effort — no reps left"
+            
+        default:
+            return ""
         }
     }
     

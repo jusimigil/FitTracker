@@ -17,9 +17,7 @@ struct RecoveryPerformanceView: View {
         let calendar = Calendar.current
         
         // Group completed workouts by calendar day.
-        let completedWorkouts = dataManager.workouts.filter {
-            $0.isCompleted
-        }
+        let completedWorkouts = dataManager.completedWorkouts
         
         let groupedWorkouts = Dictionary(
             grouping: completedWorkouts

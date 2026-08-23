@@ -4,20 +4,14 @@ struct RoutineSelectionView: View {
     @EnvironmentObject var dataManager: DataManager
     @Environment(\.dismiss) var dismiss
     
+    @State private var showActiveWorkoutAlert = false
+    
     var recommendedMuscle: MuscleGroup?
     var onWorkoutCreated: ((UUID) -> Void)?
     
-    let routineNames = [
-        "Pull",
-        "Push",
-        "Upper Body",
-        "Lower Body",
-        "Legs",
-        "Posterior",
-        "Anterior",
-        "Full Body"
-    ]
-    
+    var routineNames: [String] {
+        dataManager.routines.map(\.name)
+    }
     var body: some View {
         NavigationStack {
             List {
@@ -99,6 +93,21 @@ struct RoutineSelectionView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+        } .alert(
+            "Workout Already in Progress",
+            isPresented: $showActiveWorkoutAlert
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let activeWorkout = dataManager.activeWorkout {
+                Text(
+                    "\(activeWorkout.workoutTitle ?? "Your current workout") is still in progress. Finish it before starting another workout."
+                )
+            } else {
+                Text(
+                    "Finish your current workout before starting another one."
+                )
+            }
         }
     }
     
@@ -106,83 +115,148 @@ struct RoutineSelectionView: View {
     
     func hasHistory(for name: String) -> Bool {
         // Checks both the new Title field AND the old Notes field for backward compatibility
-        return dataManager.workouts.contains(where: { ($0.workoutTitle == name || $0.notes == name) && $0.isCompleted })
+        return dataManager.completedWorkouts.contains {
+            $0.workoutTitle == name || $0.notes == name
+        }
     }
     
     func getLastExercises(for routineName: String) -> String {
-        if let lastSession = dataManager.workouts
-            .filter({ ($0.workoutTitle == routineName || $0.notes == routineName) && $0.isCompleted })
-            .sorted(by: { $0.date > $1.date })
-            .first {
-            
+        let previousSessions = dataManager.completedWorkouts
+            .filter {
+                $0.workoutTitle == routineName ||
+                $0.notes == routineName
+            }
+            .sorted {
+                $0.date > $1.date
+            }
+
+        if let lastSession = previousSessions.first {
             let names = lastSession.exercises.map { $0.name }
-            if names.isEmpty { return "No exercises recorded" }
+
+            if names.isEmpty {
+                return "No exercises recorded"
+            }
+
             return names.joined(separator: ", ")
         }
+
         return ""
     }
     
     func createWorkout(routineName: String) {
-        workoutStartHaptic()
         
+        guard dataManager.activeWorkout == nil else {
+                showActiveWorkoutAlert = true
+                return
+            }
+        
+        workoutStartHaptic()
+
         var newSession = WorkoutSession(
             date: Date(),
             type: .strength
         )
-        
-        // NEW: Set the Title explicitly
+
         newSession.workoutTitle = routineName
-        
-        // MEMORY SYSTEM: If previous log exists, copy exercises (but clear sets)
-        if let lastSession = dataManager.workouts
-            .filter({ ($0.workoutTitle == routineName || $0.notes == routineName) && $0.isCompleted })
-            .sorted(by: { $0.date > $1.date })
-            .first {
-            
-            for oldEx in lastSession.exercises {
-                var newEx = Exercise(name: oldEx.name)
-                newEx.muscleGroup = oldEx.muscleGroup
-                newSession.exercises.append(newEx)
+
+        // Prefer the user's previous version of this routine.
+        let previousSessions = dataManager.completedWorkouts
+            .filter {
+                $0.workoutTitle == routineName ||
+                $0.notes == routineName
+            }
+            .sorted {
+                $0.date > $1.date
+            }
+
+        if let lastSession = previousSessions.first {
+            for oldExercise in lastSession.exercises {
+                var newExercise = Exercise(name: oldExercise.name)
+
+                newExercise.muscleGroup =
+                    oldExercise.resolvedMuscleGroup
+
+                newSession.exercises.append(newExercise)
+            }
+        } else if let routine = dataManager.routines.first(
+            where: { $0.name == routineName }
+        ) {
+
+            for template in routine.exercises {
+                var newExercise = Exercise(
+                    name: template.name
+                )
+
+                newExercise.muscleGroup =
+                    ExerciseCatalog.muscle(
+                        for: template.name
+                    ) ?? template.muscleGroup
+
+                newSession.exercises.append(newExercise)
             }
         }
-        
+
         dataManager.workouts.append(newSession)
         dataManager.save()
-        
+
         dismiss()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.5
+        ) {
             onWorkoutCreated?(newSession.id)
         }
     }
     
-    func createRecommendedWorkout(for muscle: MuscleGroup) {
-        
-        let routineName: String
-        
+    func createRecommendedWorkout(
+        for muscle: MuscleGroup
+    ) {
+        let routineName: String?
+
         switch muscle {
         case .chest:
-            routineName = "Push"
-            
+            routineName = dataManager.routines.first {
+                $0.name == "Push Day"
+            }?.name
+
         case .back:
-            routineName = "Pull"
-            
+            routineName = dataManager.routines.first {
+                $0.name == "Pull Day"
+            }?.name
+
         case .legs:
-            routineName = "Lower Body"
-            
+            routineName = dataManager.routines.first {
+                $0.name == "Leg Day"
+            }?.name
+
         case .shoulders:
-            routineName = "Upper Body"
-            
+            routineName = dataManager.routines.first {
+                $0.exercises.contains {
+                    $0.muscleGroup == .shoulders
+                }
+            }?.name
+
         case .arms:
-            routineName = "Upper Body"
-            
+            routineName = dataManager.routines.first {
+                $0.exercises.contains {
+                    $0.muscleGroup == .arms
+                }
+            }?.name
+
         case .core:
-            routineName = "Full Body"
+            routineName = dataManager.routines.first {
+                $0.exercises.contains {
+                    $0.muscleGroup == .core
+                }
+            }?.name
         }
-        
+
+        guard let routineName else {
+            return
+        }
+
         createWorkout(routineName: routineName)
     }
-    
     func getIcon(for name: String) -> String {
         if name.contains("Legs") || name.contains("Lower") { return "figure.walk" }
         if name.contains("Full") { return "figure.cross.training" }

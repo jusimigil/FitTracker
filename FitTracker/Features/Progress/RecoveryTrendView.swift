@@ -7,7 +7,7 @@ struct RecoveryTrendView: View {
     private var recentEntries: [RecoveryEntry] {
         let cutoff = Calendar.current.date(
             byAdding: .day,
-            value: -6,
+            value: -30,
             to: Date()
         ) ?? Date()
         
@@ -34,6 +34,61 @@ struct RecoveryTrendView: View {
         recentEntries.map(\.score).min() ?? 0
     }
     
+    private var recoveryTrend: String {
+        guard recentEntries.count >= 6 else {
+            return "Not enough data"
+        }
+        
+        let midpoint = recentEntries.count / 2
+        
+        let firstHalf = recentEntries.prefix(midpoint)
+        let secondHalf = recentEntries.suffix(
+            recentEntries.count - midpoint
+        )
+        
+        let firstAverage =
+            firstHalf.map(\.score).reduce(0, +)
+            / Double(firstHalf.count)
+        
+        let secondAverage =
+            secondHalf.map(\.score).reduce(0, +)
+            / Double(secondHalf.count)
+        
+        let difference = secondAverage - firstAverage
+        
+        if difference >= 0.75 {
+            return "Improving"
+        }
+        
+        if difference <= -0.75 {
+            return "Declining"
+        }
+        
+        return "Stable"
+    }
+
+    private var recoveryTrendIcon: String {
+        switch recoveryTrend {
+        case "Improving":
+            return "arrow.up.right"
+        case "Declining":
+            return "arrow.down.right"
+        default:
+            return "arrow.right"
+        }
+    }
+
+    private var recoveryTrendColor: Color {
+        switch recoveryTrend {
+        case "Improving":
+            return .green
+        case "Declining":
+            return .red
+        default:
+            return .secondary
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             
@@ -43,7 +98,7 @@ struct RecoveryTrendView: View {
                     Text("Recovery Trend")
                         .font(.headline)
                     
-                    Text("Last 7 days")
+                    Text("Last 30 days")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -57,7 +112,7 @@ struct RecoveryTrendView: View {
                             .fontWeight(.bold)
                             .foregroundStyle(scoreColor(averageScore))
                         
-                        Text("7-day avg")
+                        Text("30-day avg")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -131,6 +186,28 @@ struct RecoveryTrendView: View {
                         icon: "arrow.down.circle.fill"
                     )
                 }
+                
+                HStack(spacing: 10) {
+                    Image(systemName: recoveryTrendIcon)
+                        .foregroundStyle(recoveryTrendColor)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recovery Trend")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Text(recoveryTrend)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    
+                    Spacer()
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 10)
+                )
             }
         }
         .padding()

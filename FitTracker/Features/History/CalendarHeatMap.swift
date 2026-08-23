@@ -43,10 +43,15 @@ struct CalendarHeatmap: View {
                 Text("Less").font(.caption2).foregroundStyle(.secondary)
                 ForEach([0, 1000, 5000, 10000], id: \.self) { level in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(getColor(volume: Double(level) + 1))
+                        .fill(
+                            getColor(
+                                volume: dataManager.kilograms(
+                                    fromDisplayedWeight: Double(level) + 1
+                                )
+                            )
+                        )
                         .frame(width: 10, height: 10)
-                }
-                Text("More").font(.caption2).foregroundStyle(.secondary)
+                };                Text("More").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.top, 5)
         }
@@ -62,17 +67,36 @@ struct CalendarHeatmap: View {
     }
     
     func getVolume(for date: Date) -> Double {
-        let workoutsOnDay = dataManager.workouts.filter {
+        let workoutsOnDay = dataManager.completedWorkouts.filter {
             Calendar.current.isDate($0.date, inSameDayAs: date)
         }
-        return workoutsOnDay.reduce(0) { $0 + $1.totalVolume }
+
+        return workoutsOnDay.reduce(0) {
+            $0 + $1.totalVolume
+        }
     }
     
     func getColor(volume: Double) -> Color {
-        if volume == 0 { return Color.gray.opacity(0.2) }
-        if volume < 2000 { return Color.green.opacity(0.3) }
-        if volume < 5000 { return Color.green.opacity(0.5) }
-        if volume < 10000 { return Color.green.opacity(0.7) }
+        let displayedVolume =
+            dataManager.displayedWeight(
+                fromKilograms: volume
+            )
+
+        if volume == 0 {
+            return Color.gray.opacity(0.2)
+        }
+
+        if displayedVolume < 2000 {
+            return Color.green.opacity(0.3)
+        }
+
+        if displayedVolume < 5000 {
+            return Color.green.opacity(0.5)
+        }
+
+        if displayedVolume < 10000 {
+            return Color.green.opacity(0.7)
+        }
+
         return Color.green
-    }
-}
+    }}

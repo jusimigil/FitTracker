@@ -52,6 +52,10 @@ struct Exercise: Identifiable, Codable, Equatable {
     var name: String
     var sets: [WorkoutSet] = []
     var muscleGroup: MuscleGroup = .chest
+    
+    var resolvedMuscleGroup: MuscleGroup {
+        ExerciseCatalog.muscle(for: name) ?? muscleGroup
+    }
 }
 
 struct WorkoutSession: Identifiable, Codable, Equatable {

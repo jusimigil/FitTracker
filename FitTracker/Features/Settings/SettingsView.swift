@@ -61,6 +61,14 @@ struct SettingsView: View {
                     Button("Sync Apple Watch Runs") {
                         HealthManager.shared.syncWorkouts(into: dataManager)
                     }
+                    Button {
+                        HealthManager.shared.requestAuthorization()
+                    } label: {
+                        Label(
+                            "Connect Apple Health",
+                            systemImage: "heart.fill"
+                        )
+                    }
                 }
             }
             .navigationTitle("Settings")

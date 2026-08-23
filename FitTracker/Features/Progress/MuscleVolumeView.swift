@@ -27,7 +27,7 @@ struct MuscleVolumeView: View {
                 Text("Muscle Group Volume")
                     .font(.headline)
                 
-                Text("Completed sets • Last 7 days")
+                Text("Completed sets • This week")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -40,11 +40,10 @@ struct MuscleVolumeView: View {
                     y: .value("Muscle", item.muscle.rawValue)
                 )
                 .foregroundStyle(
-                    item.sets >= recompManager.weeklySetTarget
+                    item.sets >= recompManager.weeklyTarget(for: item.muscle)
                     ? Color.green
                     : Color.blue
-                )
-                .annotation(position: .trailing) {
+                )   .annotation(position: .trailing) {
                     if item.sets > 0 {
                         Text("\(item.sets)")
                             .font(.caption2)
@@ -54,11 +53,14 @@ struct MuscleVolumeView: View {
             }
             .chartXScale(
                 domain: 0...max(
-                    Double(recompManager.weeklySetTarget),
+                    Double(
+                        muscleData.map {
+                            recompManager.weeklyTarget(for: $0.muscle)
+                        }.max() ?? 0
+                    ),
                     Double(muscleData.map(\.sets).max() ?? 0)
                 )
-            )
-            .chartXAxis {
+            )            .chartXAxis {
                 AxisMarks(position: .bottom)
             }
             .chartYAxis {

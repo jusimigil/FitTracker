@@ -11,10 +11,12 @@ struct RecoveryCheckInView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var dataManager: DataManager
     @ObservedObject var recompManager = RecompManager.shared
+    @ObservedObject var healthManager = HealthManager.shared
     
     // Binds directly to the phone's storage
     @AppStorage("dailyRecoveryScore") var recoveryScore: Double = 8.0
     @AppStorage("lastCheckInDate") var lastCheckInDate: String = ""
+
     
     var body: some View {
         VStack(spacing: 30) {
@@ -62,19 +64,62 @@ struct RecoveryCheckInView: View {
             
             // SMART INSIGHT (Live Feedback)
             // This applies the "Logic/ML" immediately so user sees the plan changing
-            VStack(spacing: 8) {
-                Text("Trainer's Plan for Today:")
-                    .font(.caption).bold().foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+            // MARK: - Sleep
+
+            VStack(alignment: .leading, spacing: 10) {
                 
-                Text(recompManager.getFlexibleTarget(recoveryScore: Int(recoveryScore)))
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal)
-                    .transition(.opacity) // Smooth animation
-                    .id(recoveryScore) // Forces refresh on change
+                HStack {
+                    Image(systemName: "moon.zzz.fill")
+                        .foregroundStyle(.indigo)
+                    
+                    Text("Sleep")
+                        .font(.headline)
+                    
+                    Spacer()
+                    
+                    if healthManager.lastNightSleepHours > 0 {
+                        Text(
+                            "\(healthManager.lastNightSleepHours, specifier: "%.1f") h"
+                        )
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    } else {
+                        Text("No data")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                if healthManager.lastNightSleepHours > 0 {
+                    HStack {
+                        Text(
+                            sleepSummary(
+                                hours: healthManager.lastNightSleepHours
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        Text("Apple Health")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(
+                        "Wear your connected device overnight to track sleep."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .clipShape(
+                RoundedRectangle(cornerRadius: 16)
+            )
+            .padding(.horizontal)
             
             Spacer()
             
@@ -98,6 +143,24 @@ struct RecoveryCheckInView: View {
         if recoveryScore < 4 { return .red }
         if recoveryScore < 7 { return .orange }
         return .green
+    }
+    
+    
+    private func sleepSummary(hours: Double) -> String {
+        
+        if hours < 6 {
+            return "Short sleep"
+        }
+        
+        if hours < 7 {
+            return "Below your usual sleep range"
+        }
+        
+        if hours < 9 {
+            return "Good sleep duration"
+        }
+        
+        return "Long sleep"
     }
     
     func saveCheckIn() {

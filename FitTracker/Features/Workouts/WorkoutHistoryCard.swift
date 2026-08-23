@@ -32,11 +32,12 @@ struct WorkoutHistoryCard: View {
                 Spacer()
                 
                 if session.isCompleted {
-                    Image(systemName: "checkmark.circle.fill")
+                    Label("Completed", systemImage: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
                         .foregroundStyle(.green)
-                        .font(.title3)
-                } else {
-                    Text("In Progress")
+                } else if hasStartedWorkout {
+                    Label("In Progress", systemImage: "play.circle.fill")
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundStyle(.orange)
@@ -188,6 +189,11 @@ struct WorkoutHistoryCard: View {
     
     
     // MARK: - Computed Properties
+    private var hasStartedWorkout: Bool {
+        session.exercises.contains {
+            !$0.sets.isEmpty
+        }
+    }
     
     private var exerciseCount: Int {
         session.exercises.count

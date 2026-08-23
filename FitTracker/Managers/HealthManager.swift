@@ -9,25 +9,81 @@ class HealthManager: ObservableObject {
     @Published var currentHeartRate: Double = 0
     @Published var activeCalories: Double = 0
     @Published var currentSteps: Int = 0 // <--- NEW: Live Step Count
+    @Published var lastNightSleepHours: Double = 0
+    @Published var restingHeartRate: Double = 0
     
     // Live Monitoring
     private var heartRateQuery: HKObserverQuery?
     private var calorieQuery: HKObserverQuery?
     private var refreshTimer: Timer?
     var sessionStartDate: Date?
+    private var sleepAuthorizationRequested = false
     
     // Auto-Sync
     private var autoSyncTimer: Timer?
 
     // MARK: - Authorization
     func requestAuthorization() {
-        let types: Set = [
-            HKObjectType.quantityType(forIdentifier: .heartRate)!,
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .stepCount)!, // <--- NEW: Request Steps
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("❌ HealthKit is not available.")
+            return
+        }
+
+        guard
+            let heartRateType = HKQuantityType.quantityType(
+                forIdentifier: .heartRate
+            ),
+            let restingHeartRateType = HKQuantityType.quantityType(
+                forIdentifier: .restingHeartRate
+            ),
+            let caloriesType = HKQuantityType.quantityType(
+                forIdentifier: .activeEnergyBurned
+            ),
+            let stepsType = HKQuantityType.quantityType(
+                forIdentifier: .stepCount
+            ),
+            let sleepType = HKCategoryType.categoryType(
+                forIdentifier: .sleepAnalysis
+            )
+        else {
+            print("❌ Could not create HealthKit types.")
+            return
+        }
+
+        let readTypes: Set<HKObjectType> = [
+            heartRateType,
+            restingHeartRateType,
+            caloriesType,
+            stepsType,
+            sleepType,
             HKObjectType.workoutType()
         ]
-        healthStore.requestAuthorization(toShare: [], read: types) { _, _ in }
+
+        sleepAuthorizationRequested = true
+
+        healthStore.requestAuthorization(
+            toShare: [],
+            read: readTypes
+        ) { [weak self] success, error in
+            if let error {
+                print(
+                    "❌ HealthKit authorization error: \(error.localizedDescription)"
+                )
+                return
+            }
+
+            print(
+                success
+                    ? "✅ HealthKit authorization request completed."
+                    : "⚠️ HealthKit authorization request did not complete."
+            )
+
+            // Give HealthKit a moment to finish updating its authorization
+            // state before performing the first sleep query.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self?.fetchLastNightSleep()
+            }
+        }
     }
     
     // MARK: - NEW: FETCH STEPS
@@ -47,21 +103,248 @@ class HealthManager: ObservableObject {
         healthStore.execute(query)
     }
     
-    // MARK: - AUTO SYNC (Runs & Swims & Steps)
-    func startAutoSync(dataManager: DataManager) {
-        // Run immediately
-        syncWorkouts(into: dataManager)
-        fetchTodaySteps()
+    // MARK: - FETCH LAST NIGHT'S SLEEP
+
+    func fetchLastNightSleep() {
         
-        // Run every 5 minutes
-        autoSyncTimer?.invalidate()
-        autoSyncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            print("🔄 Auto-syncing data...")
-            self?.syncWorkouts(into: dataManager)
-            self?.fetchTodaySteps()
+        guard let sleepType = HKObjectType.categoryType(
+            forIdentifier: .sleepAnalysis
+        ) else {
+            return
         }
+        
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // Search back far enough to cover a normal overnight sleep period.
+        let startOfSearch = calendar.date(
+            byAdding: .hour,
+            value: -18,
+            to: now
+        ) ?? now.addingTimeInterval(-18 * 60 * 60)
+        
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startOfSearch,
+            end: now,
+            options: .strictStartDate
+        )
+        
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate,
+            ascending: true
+        )
+        
+        let query = HKSampleQuery(
+            sampleType: sleepType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [sortDescriptor]
+        ) { [weak self] _, results, error in
+            
+            guard let self else {
+                return
+            }
+            
+            if let error {
+                print("❌ Sleep query error: \(error)")
+                return
+            }
+            
+            guard let samples = results as? [HKCategorySample] else {
+                DispatchQueue.main.async {
+                    self.lastNightSleepHours = 0
+                }
+                return
+            }
+            
+            let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            ]
+            
+            let sleepSamples = samples.filter {
+                asleepValues.contains($0.value)
+            }
+            
+            guard !sleepSamples.isEmpty else {
+                DispatchQueue.main.async {
+                    self.lastNightSleepHours = 0
+                }
+                print("😴 No sleep data found.")
+                return
+            }
+            
+            // Merge overlapping sleep samples so multiple Health sources
+            // don't double-count the same sleep interval.
+            var intervals: [(start: Date, end: Date)] = []
+            
+            for sample in sleepSamples {
+                intervals.append(
+                    (
+                        start: sample.startDate,
+                        end: sample.endDate
+                    )
+                )
+            }
+            
+            intervals.sort {
+                $0.start < $1.start
+            }
+            
+            var mergedIntervals: [
+                (start: Date, end: Date)
+            ] = []
+            
+            for interval in intervals {
+                
+                guard let last = mergedIntervals.last else {
+                    mergedIntervals.append(interval)
+                    continue
+                }
+                
+                if interval.start <= last.end {
+                    
+                    let mergedEnd = max(
+                        last.end,
+                        interval.end
+                    )
+                    
+                    mergedIntervals[
+                        mergedIntervals.count - 1
+                    ] = (
+                        start: last.start,
+                        end: mergedEnd
+                    )
+                    
+                } else {
+                    mergedIntervals.append(interval)
+                }
+            }
+            
+            let totalSeconds = mergedIntervals.reduce(0.0) {
+                $0 + $1.end.timeIntervalSince($1.start)
+            }
+            
+            let hours = totalSeconds / 3600.0
+            
+            DispatchQueue.main.async {
+                self.lastNightSleepHours = hours
+                
+                print(
+                    "😴 Last night's sleep: " +
+                    String(format: "%.2f", hours) +
+                    " hours"
+                )
+            }
+        }
+        
+        healthStore.execute(query)
     }
     
+    // MARK: - FETCH RESTING HEART RATE
+
+    func fetchRestingHeartRate() {
+        
+        guard let type = HKQuantityType.quantityType(
+            forIdentifier: .restingHeartRate
+        ) else {
+            return
+        }
+        
+        let now = Date()
+        let startDate = Calendar.current.date(
+            byAdding: .day,
+            value: -2,
+            to: now
+        ) ?? now.addingTimeInterval(-172800)
+        
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: now,
+            options: .strictStartDate
+        )
+        
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate,
+            ascending: false
+        )
+        
+        let query = HKSampleQuery(
+            sampleType: type,
+            predicate: predicate,
+            limit: 1,
+            sortDescriptors: [sortDescriptor]
+        ) { [weak self] _, results, error in
+            
+            guard let self else {
+                return
+            }
+            
+            if let error {
+                print(
+                    "❌ Resting heart rate query error: \(error.localizedDescription)"
+                )
+                return
+            }
+            
+            guard let sample = results?.first as? HKQuantitySample else {
+                DispatchQueue.main.async {
+                    self.restingHeartRate = 0
+                }
+                
+                print("❤️ No resting heart rate data found.")
+                return
+            }
+            
+            let value = sample.quantity.doubleValue(
+                for: HKUnit.count().unitDivided(by: .minute())
+            )
+            
+            DispatchQueue.main.async {
+                self.restingHeartRate = value
+                
+                print(
+                    "❤️ Resting heart rate: " +
+                    String(format: "%.0f", value) +
+                    " bpm"
+                )
+            }
+        }
+        
+        healthStore.execute(query)
+    }
+    
+    // MARK: - AUTO SYNC (Runs & Swims & Steps)
+    func startAutoSync(dataManager: DataManager) {
+        
+        // Existing syncs
+        syncWorkouts(into: dataManager)
+        fetchTodaySteps()
+        fetchRestingHeartRate()
+        fetchLastNightSleep()
+        
+        // Request HealthKit access.
+        // Sleep is fetched from the authorization completion above.
+        requestAuthorization()
+        
+        autoSyncTimer?.invalidate()
+        
+        autoSyncTimer = Timer.scheduledTimer(
+            withTimeInterval: 300,
+            repeats: true
+        ) { [weak self] _ in
+            
+            print("🔄 Auto-syncing data...")
+            
+            self?.syncWorkouts(into: dataManager)
+            self?.fetchTodaySteps()
+            self?.fetchLastNightSleep()
+            self?.fetchRestingHeartRate()
+        }
+    }
+            
     func stopAutoSync() {
         autoSyncTimer?.invalidate()
         autoSyncTimer = nil

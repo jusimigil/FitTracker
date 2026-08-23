@@ -16,6 +16,25 @@ class DataManager: ObservableObject {
     @Published var personalRecords: [PersonalRecord] = []
     @Published var recoveryHistory: [RecoveryEntry] = []
     
+    // MARK: - Active Workout
+
+    var activeWorkout: WorkoutSession? {
+        workouts.first { workout in
+            guard !workout.isCompleted else {
+                return false
+            }
+
+            return workout.exercises.contains { exercise in
+                !exercise.sets.isEmpty
+            }
+        }
+    }
+    
+    var completedWorkouts: [WorkoutSession] {
+        workouts.filter { $0.isCompleted }
+    }
+
+    
     // 2. NEW: Global Settings for Units
     @AppStorage("weightUnit") var weightUnit: WeightUnit = .lbs
     
